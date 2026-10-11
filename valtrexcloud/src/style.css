@@ -4,3 +4,5 @@
 @media(max-width:370px){.brand{font-size:16px}.brand-mark{height:36px;width:36px}.card-body{padding-left:18px;padding-right:18px}.steps{gap:10px}h1{font-size:27px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
 .preview-banner{width:100%;max-height:180px;object-fit:cover;border-radius:12px;margin-top:24px}.preview-button{cursor:default;opacity:.75;pointer-events:none}
+.app{background-image:var(--overlay),var(--wallpaper)}.discord-button{color:var(--button-text,#fff)}
+.lead,.steps p,.privacy{color:var(--muted-text)}.brand small,.secure-label,.below-card,.app footer{color:var(--outside-text)}

@@ -19,6 +19,20 @@ const messages = {
   temporary: ['Erro temporário', 'Tente novamente em alguns instantes.'],
 };
 
+function luminance(color) {
+  const channels = [1, 3, 5].map(position => parseInt(color.slice(position, position + 2), 16) / 255)
+    .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+function contrast(first, second) {
+  const a = luminance(first); const b = luminance(second);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+function readableColor(preferred, background) {
+  if (contrast(preferred, background) >= 4.5) return preferred;
+  return contrast('#ffffff', background) >= contrast('#171821', background) ? '#ffffff' : '#171821';
+}
+
 function DiscordIcon() {
   return <svg width="22" height="18" viewBox="0 0 127.14 96.36" fill="currentColor" aria-hidden="true"><path d="M104.4 8.87A102.2 102.2 0 0 0 79.05.92a70.35 70.35 0 0 0-3.24 6.71 95.12 95.12 0 0 0-28.48 0A71.39 71.39 0 0 0 44.1.92 102.3 102.3 0 0 0 18.7 8.89C2.64 32.66-1.7 55.85.48 78.71a102.74 102.74 0 0 0 31.07 15.68c2.5-3.4 4.73-7 6.64-10.8a66.92 66.92 0 0 1-10.45-5.04c.88-.64 1.73-1.3 2.56-1.97 20.15 9.43 42 9.43 61.91 0 .83.68 1.68 1.34 2.56 1.98a66.28 66.28 0 0 1-10.47 5.06 87.25 87.25 0 0 0 6.64 10.79 102.35 102.35 0 0 0 31.09-15.67c2.58-26.5-4.41-49.48-18.22-69.83ZM42.45 64.67c-6.05 0-11.02-5.57-11.02-12.4s4.87-12.4 11.02-12.4c6.2 0 11.12 5.62 11.02 12.4 0 6.83-4.87 12.4-11.02 12.4Zm42.24 0c-6.05 0-11.02-5.57-11.02-12.4s4.87-12.4 11.02-12.4c6.2 0 11.12 5.62 11.02 12.4 0 6.83-4.87 12.4-11.02 12.4Z"/></svg>;
 }
@@ -26,9 +40,15 @@ function ShieldIcon() { return <svg width="23" height="23" fill="none" stroke="c
 function Brand({ theme = DEFAULT_THEME }) { return <div className="brand"><span className="brand-mark">V</span><span>{theme.name || 'Valtrex'}<small>CLOUD VERIFICATION</small></span></div>; }
 
 function Shell({ children, theme = DEFAULT_THEME }) {
-  const css = { '--primary': theme.primary, '--secondary': theme.secondary, '--text': theme.text,
+  const css = { '--primary': theme.primary, '--secondary': readableColor(theme.secondary, theme.card),
+    '--text': readableColor(theme.text, theme.card), '--button-text': readableColor('#ffffff', theme.primary),
+    '--muted-text': readableColor('#a8a9b9', theme.card),
+    '--outside-text': readableColor('#a8a9b9', theme.background),
     '--background': theme.background, '--card': theme.card, '--border': theme.border,
-    '--radius': `${theme.radius || 22}px`, '--wallpaper': theme.backgroundImage ? `url("${theme.backgroundImage}")` : 'none' };
+    '--radius': `${theme.radius || 22}px`, '--wallpaper': theme.backgroundImage ? `url("${theme.backgroundImage}")` : 'none',
+    '--overlay': luminance(theme.background) > 0.6
+      ? 'linear-gradient(rgba(255,255,255,.15),rgba(255,255,255,.22))'
+      : 'linear-gradient(180deg,rgba(5,6,10,.4),rgba(5,6,10,.8))' };
   return <div className="app" style={css}><div className="aurora aurora-a"/><div className="aurora aurora-b"/>
     <header className="topbar"><Brand theme={theme}/><span className="secure-label"><span className="secure-dot"/> Conexão segura</span></header>
     <main>{children}</main><footer>{theme.footer || 'ValtrexCloud'} <span>·</span> OAuth2 oficial do Discord</footer>

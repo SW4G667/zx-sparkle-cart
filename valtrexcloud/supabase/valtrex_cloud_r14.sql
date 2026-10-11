@@ -5,6 +5,7 @@ alter table public.valtrex_tenants add column if not exists verify_channel_id te
 alter table public.valtrex_tenants add column if not exists verify_message_id text;
 alter table public.valtrex_tenants add column if not exists bot_guild_ids jsonb not null default '[]'::jsonb;
 alter table public.valtrex_tenants add column if not exists bot_seen_at timestamptz;
+alter table public.valtrex_gifts add column if not exists kind text not null default 'verification';
 alter table public.valtrex_oauth_states alter column gift_id drop not null;
 alter table public.valtrex_oauth_states add column if not exists flow text not null default 'gift';
 alter table public.valtrex_verifications alter column gift_id drop not null;

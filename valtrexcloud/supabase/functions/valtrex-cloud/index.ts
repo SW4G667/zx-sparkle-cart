@@ -289,37 +289,37 @@ async function giftSetup(req: Request, token: string, action: string) {
   const { count: eligible } = await db.from('valtrex_consents').select('discord_user_id', { count: 'exact', head: true })
     .eq('tenant_id', tenant.id).is('revoked_at', null).gt('retention_until', new Date().toISOString());
   if (req.method === 'GET' && !action) {
+    const { data: pulls } = await db.from('valtrex_backup_jobs')
+      .select('id,status,created_at,requested_count,target_guild_id,pull_index')
+      .eq('tenant_id', tenant.id).eq('gift_id', gift.id).order('created_at', { ascending: true }).limit(2);
+    const first = pulls?.[0];
     return json({ guilds: session.guilds, eligible: eligible || 0, applicationId: tenant.client_id,
+      memberLimit: gift.member_limit, pulls: pulls || [],
+      remainingPulls: Math.max(0, 2 - (pulls?.length || 0)),
+      nextPullAt: first ? new Date(Date.parse(first.created_at) + 86_400_000).toISOString() : null,
       botGuilds: Date.parse(tenant.bot_seen_at || '') > Date.now() - 180_000 ? tenant.bot_guild_ids : [] });
   }
   if (req.method === 'POST' && action === 'recovery') {
     if (req.headers.get('origin') !== BASE || !req.headers.get('content-type')?.startsWith('application/json'))
       return json({ error: 'Origem inválida.' }, 403);
     const input = await body(req); const guildId = String(input.guildId || ''); const count = Number(input.count);
-    if (!validId(guildId) || !Number.isInteger(count) || count < 1 || count > 500)
-      return json({ error: 'Informe um servidor e uma quantidade entre 1 e 500.' }, 400);
+    if (!validId(guildId) || !Number.isInteger(count) || count < 1 || count > Number(gift.member_limit || 500))
+      return json({ error: `Informe um servidor e uma quantidade entre 1 e ${gift.member_limit || 500}.` }, 400);
     if (!Array.isArray(session.guilds) || !session.guilds.some((g: any) => g.id === guildId))
       return json({ error: 'Sua conta não administra este servidor.' }, 403);
     if (Date.parse(tenant.bot_seen_at || '') <= Date.now() - 180_000 || !Array.isArray(tenant.bot_guild_ids) || !tenant.bot_guild_ids.includes(guildId))
       return json({ error: 'Adicione o bot com a permissão Criar Convite neste servidor e aguarde a conexão.' }, 409);
     if (count > (eligible || 0)) return json({ error: `Há somente ${eligible || 0} membros com autorização válida nesta loja.` }, 409);
-    const { data: existing } = await db.from('valtrex_backup_jobs').select('id').eq('gift_id', gift.id)
-      .eq('actor_user_id', session.discord_user_id).eq('target_guild_id', guildId).maybeSingle();
-    if (existing) return json({ error: 'Este Gift já iniciou uma recuperação para esse servidor.' }, 409);
-    const { data: members, error: memberError } = await db.from('valtrex_consents').select('discord_user_id')
-      .eq('tenant_id', tenant.id).is('revoked_at', null).gt('retention_until', new Date().toISOString()).order('consented_at').limit(count);
-    if (memberError || !members || members.length < count) return json({ error: 'As autorizações disponíveis mudaram. Atualize a página.' }, 409);
-    const { data: job, error: jobError } = await db.from('valtrex_backup_jobs').insert({ tenant_id: tenant.id, gift_id: gift.id,
-      actor_user_id: session.discord_user_id, target_guild_id: guildId, requested_count: count }).select('id').single();
-    if (jobError) return json({ error: 'Não foi possível iniciar a recuperação.' }, 409);
-    const { error: queueError } = await db.from('valtrex_backup_job_members').insert(members.map((m: any) => ({
-      tenant_id: tenant.id, job_id: job.id, discord_user_id: m.discord_user_id })));
-    if (queueError) {
-      await db.from('valtrex_backup_jobs').update({ status: 'failed' }).eq('id', job.id);
-      return json({ error: 'Não foi possível preparar os membros. Nenhuma transferência começou.' }, 503);
-    }
-    await log(tenant.id, 'backup_started', { job_id: job.id, target_guild_id: guildId, requested: count });
-    return json({ jobId: job.id, requested: count }, 201);
+    // O RPC bloqueia a linha do Gift e grava pedido + fila na mesma transação.
+    // Duas requisições concorrentes não podem consumir a mesma tentativa.
+    const { data: started, error: startError } = await db.rpc('valtrex_start_backup_pull', {
+      p_tenant_id: tenant.id, p_gift_id: gift.id, p_actor_user_id: session.discord_user_id,
+      p_target_guild_id: guildId, p_count: count,
+    });
+    if (startError) return json({ error: 'Não foi possível preparar a recuperação. Nenhuma transferência começou.' }, 503);
+    if (started?.error) return json(started, 409);
+    await log(tenant.id, 'backup_started', { job_id: started.jobId, target_guild_id: guildId, requested: count, pull_index: started.pullIndex });
+    return json(started, 201);
   }
   const jobId = action.match(/^job\/([0-9a-f-]{36})$/)?.[1];
   if (req.method === 'GET' && jobId) {
@@ -392,7 +392,7 @@ async function admin(req: Request, path: string) {
     if (error) return json({ error: 'Falha ao carregar gifts.' }, 500);
     const gifts = await Promise.all((data || []).map(async (gift: any) => ({ id: gift.id, name: gift.internal_name,
       title: gift.title, description: gift.description, banner: gift.banner_url, active: gift.active, kind: gift.kind,
-      status: giftState(gift), uses: gift.uses, maxUses: gift.max_uses, expiresAt: gift.expires_at,
+      status: giftState(gift), uses: gift.uses, maxUses: gift.max_uses, memberLimit: gift.member_limit, expiresAt: gift.expires_at,
       createdAt: gift.created_at, theme: gift.theme, link: `${BASE}/g/${await open(gift.token_cipher)}` })));
     return json({ gifts, total: count || 0, page, pages: Math.max(1, Math.ceil((count || 0) / 25)) });
   }
@@ -401,13 +401,17 @@ async function admin(req: Request, path: string) {
     const title = String(input.title || '').trim().slice(0, 100);
     const name = String(input.name || title).trim().slice(0, 100);
     const max = input.maxUses === null || input.maxUses === undefined ? null : Number(input.maxUses);
+    const memberLimit = Number(input.memberLimit);
     const expires = input.expiresAt ? new Date(input.expiresAt) : null;
-    if (!title || !name || (max !== null && (!Number.isSafeInteger(max) || max < 1)) || (expires && (!Number.isFinite(expires.getTime()) || expires.getTime() <= Date.now()))) return json({ error: 'Título, limite ou expiração inválidos.' }, 400);
+    if (!title || !name || !Number.isSafeInteger(memberLimit) || memberLimit < 1 || memberLimit > 500 ||
+        (max !== null && (!Number.isSafeInteger(max) || max < 1)) ||
+        (expires && (!Number.isFinite(expires.getTime()) || expires.getTime() <= Date.now())))
+      return json({ error: 'Informe nome, título e limite de membros entre 1 e 500.' }, 400);
     if (!tenant.client_id || !tenant.client_secret_cipher || !tenant.owner_user_id) return json({ error: 'Configure OAuth e vincule o proprietário antes de criar Gifts.' }, 409);
     const token = randomToken(); const gift = { tenant_id: tenant.id, token_hash: await sha(token), token_cipher: await seal(token), kind: 'backup',
       internal_name: name, title, description: String(input.description || '').slice(0, 500),
       banner_url: validImage(input.banner), expires_at: expires?.toISOString() || null,
-      max_uses: max, theme: input.theme ? cleanTheme(input.theme) : null,
+      max_uses: max, member_limit: memberLimit, theme: input.theme ? cleanTheme(input.theme) : null,
       success_message: String(input.successMessage || '').slice(0, 300) || null };
     const { data, error } = await db.from('valtrex_gifts').insert(gift).select('id').single();
     if (error) return json({ error: 'Falha ao criar Gift.' }, 500);
@@ -420,7 +424,7 @@ async function admin(req: Request, path: string) {
     if (!gift) return json({ error: 'Gift não encontrado.' }, 404);
     return json({ id: gift.id, name: gift.internal_name, title: gift.title, description: gift.description, kind: gift.kind,
       banner: gift.banner_url, active: gift.active, status: giftState(gift), uses: gift.uses,
-      maxUses: gift.max_uses, expiresAt: gift.expires_at, createdAt: gift.created_at,
+      maxUses: gift.max_uses, memberLimit: gift.member_limit, expiresAt: gift.expires_at, createdAt: gift.created_at,
       link: `${BASE}/g/${await open(gift.token_cipher)}` });
   }
   if (match && req.method === 'PATCH') {

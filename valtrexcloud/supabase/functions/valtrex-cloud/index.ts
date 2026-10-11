@@ -156,10 +156,11 @@ function giftState(gift: any) {
 }
 async function publicGift(token: string) {
   const gift = await giftByToken(token); const status = giftState(gift);
-  if (!gift || !['active', 'full'].includes(status)) return json({ status, message: status === 'expired' ? 'Este convite expirou.' : 'Este convite não está disponível.' }, status === 'invalid' ? 404 : 410);
+  if (!gift || !['active', 'full'].includes(status) || (gift.kind !== 'backup' && status === 'full'))
+    return json({ status, message: status === 'expired' ? 'Este convite expirou.' : status === 'full' ? 'Este convite atingiu o limite de usos.' : 'Este convite não está disponível.' }, status === 'invalid' ? 404 : 410);
   const { data: tenant } = await db.from('valtrex_tenants').select('label,theme,client_id,client_secret_cipher').eq('id', gift.tenant_id).maybeSingle();
   if (!tenant?.client_id || !tenant.client_secret_cipher) return json({ status: 'incomplete', message: 'A verificação desta loja ainda não está configurada.' }, 503);
-  return json({ status: 'active', kind: 'backup', title: gift.title, description: gift.description,
+  return json({ status: 'active', kind: gift.kind === 'backup' ? 'backup' : 'verify', title: gift.title, description: gift.description,
     banner: gift.banner_url, theme: cleanTheme(gift.theme || tenant.theme), store: tenant.label,
     expiresAt: gift.expires_at, remaining: gift.max_uses === null ? null : Math.max(0, gift.max_uses - gift.uses) });
 }
@@ -181,18 +182,19 @@ async function preview(id: string, expires: string, signature: string) {
 async function start(req: Request, token: string, flow: 'backup' | 'verify' = 'backup') {
   if (!(await limit(req, 'auth', 12))) return errorPage('busy');
   const gift = flow === 'backup' ? await giftByToken(token) : null;
-  if (flow === 'backup' && !['active', 'full'].includes(giftState(gift))) return errorPage(giftState(gift));
+  const actualFlow = flow === 'backup' && gift?.kind !== 'backup' ? 'legacy_gift' : flow;
+  if (flow === 'backup' && !(actualFlow === 'backup' ? ['active', 'full'] : ['active']).includes(giftState(gift))) return errorPage(giftState(gift));
   if (flow === 'verify' && !validId(token)) return errorPage('invalid');
   const { data: tenant } = await db.from('valtrex_tenants').select('id,client_id,client_secret_cipher,guild_id,owner_user_id')
     .eq('id', flow === 'backup' ? gift.tenant_id : token).maybeSingle();
   if (!tenant?.client_id || !tenant.client_secret_cipher || (flow === 'verify' && !tenant.guild_id) ||
-      (flow === 'backup' && !tenant.owner_user_id)) return errorPage('incomplete');
+      (actualFlow === 'backup' && !tenant.owner_user_id)) return errorPage('incomplete');
   const state = randomToken(); const verifier = randomToken();
   const { error } = await db.from('valtrex_oauth_states').insert({ state_hash: await sha(state), verifier_hash: await sha(verifier),
-    gift_id: gift?.id || null, tenant_id: tenant.id, flow, expires_at: new Date(Date.now() + 10 * 60_000).toISOString() });
+    gift_id: gift?.id || null, tenant_id: tenant.id, flow: actualFlow, expires_at: new Date(Date.now() + 10 * 60_000).toISOString() });
   if (error) return errorPage('temporary');
   const params = new URLSearchParams({ client_id: tenant.client_id, redirect_uri: CALLBACK,
-    response_type: 'code', scope: flow === 'verify' ? 'identify guilds.join' : 'identify guilds', state, prompt: 'consent' });
+    response_type: 'code', scope: actualFlow === 'verify' ? 'identify guilds.join' : actualFlow === 'backup' ? 'identify guilds' : 'identify', state, prompt: 'consent' });
   return new Response(null, { status: 302, headers: headers({
     location: `https://discord.com/oauth2/authorize?${params}`,
     'set-cookie': `vtx_oauth=${verifier}; Path=/api/auth; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
@@ -211,11 +213,11 @@ async function callback(req: Request, url: URL) {
   if (stateError || !states?.length) return redirect('/result?status=invalid', clear);
   const row = states[0];
   const { data: tenant } = await db.from('valtrex_tenants').select('*').eq('id', row.tenant_id).maybeSingle();
-  const { data: gift } = row.flow === 'backup' ? await db.from('valtrex_gifts').select('*').eq('id', row.gift_id).eq('tenant_id', row.tenant_id).maybeSingle() : { data: null };
-  if (!tenant?.client_id || !tenant.client_secret_cipher || (row.flow === 'backup' && !gift)) return redirect('/result?status=incomplete', clear);
+  const { data: gift } = ['backup', 'legacy_gift', 'gift'].includes(row.flow) ? await db.from('valtrex_gifts').select('*').eq('id', row.gift_id).eq('tenant_id', row.tenant_id).maybeSingle() : { data: null };
+  if (!tenant?.client_id || !tenant.client_secret_cipher || (row.flow !== 'verify' && !gift)) return redirect('/result?status=incomplete', clear);
   // A função atômica confere limite e idempotência; uma pessoa já verificada
   // pode concluir o callback mesmo que o último uso tenha preenchido o Gift.
-  if (row.flow === 'backup' && ['invalid', 'expired'].includes(giftState(gift))) return redirect(`/result?status=${giftState(gift)}`, clear);
+  if (gift && ['invalid', 'expired'].includes(giftState(gift))) return redirect(`/result?status=${giftState(gift)}`, clear);
   try {
     const secret = await open(tenant.client_secret_cipher);
     const token = await fetch('https://discord.com/api/v10/oauth2/token', {
@@ -241,6 +243,13 @@ async function callback(req: Request, url: URL) {
       await log(tenant.id, 'verification_completed', { verification_id: verified });
       return redirect('/result?status=success', clear);
     }
+    if (row.flow === 'legacy_gift' || row.flow === 'gift') {
+      const { data: claim, error: claimError } = await db.rpc('valtrex_claim_gift', { p_gift_id: gift.id, p_user_id: user.id });
+      if (claimError || !claim?.length) return redirect('/result?status=temporary', clear);
+      const status = claim[0].claim_status;
+      await log(tenant.id, status === 'ok' ? 'legacy_gift_verified' : `gift_${status}`, { gift_id: gift.id });
+      return redirect(`/result?status=${status === 'ok' || status === 'already' ? 'success' : status}`, clear);
+    }
     if (row.flow !== 'backup' || user.id !== tenant.owner_user_id) return redirect('/result?status=forbidden', clear);
     const guildResponse = await fetch('https://discord.com/api/v10/users/@me/guilds', {
       headers: { authorization: `Bearer ${tokenData.access_token}` }, signal: AbortSignal.timeout(8000) });
@@ -263,7 +272,7 @@ async function callback(req: Request, url: URL) {
 
 async function giftSession(req: Request, token: string) {
   const gift = await giftByToken(token);
-  if (!gift || giftState(gift) === 'invalid' || giftState(gift) === 'expired') return null;
+  if (!gift || gift.kind !== 'backup' || giftState(gift) === 'invalid' || giftState(gift) === 'expired') return null;
   const value = cookieValue(req, 'vtx_gift');
   if (!/^[A-Za-z0-9_-]{80,200}$/.test(value)) return null;
   const { data } = await db.from('valtrex_gift_sessions').select('*').eq('session_hash', await sha(value))
@@ -382,7 +391,7 @@ async function admin(req: Request, path: string) {
       .order('created_at', { ascending: false }).range(page * 25, page * 25 + 24);
     if (error) return json({ error: 'Falha ao carregar gifts.' }, 500);
     const gifts = await Promise.all((data || []).map(async (gift: any) => ({ id: gift.id, name: gift.internal_name,
-      title: gift.title, description: gift.description, banner: gift.banner_url, active: gift.active,
+      title: gift.title, description: gift.description, banner: gift.banner_url, active: gift.active, kind: gift.kind,
       status: giftState(gift), uses: gift.uses, maxUses: gift.max_uses, expiresAt: gift.expires_at,
       createdAt: gift.created_at, theme: gift.theme, link: `${BASE}/g/${await open(gift.token_cipher)}` })));
     return json({ gifts, total: count || 0, page, pages: Math.max(1, Math.ceil((count || 0) / 25)) });
@@ -395,7 +404,7 @@ async function admin(req: Request, path: string) {
     const expires = input.expiresAt ? new Date(input.expiresAt) : null;
     if (!title || !name || (max !== null && (!Number.isSafeInteger(max) || max < 1)) || (expires && (!Number.isFinite(expires.getTime()) || expires.getTime() <= Date.now()))) return json({ error: 'Título, limite ou expiração inválidos.' }, 400);
     if (!tenant.client_id || !tenant.client_secret_cipher || !tenant.owner_user_id) return json({ error: 'Configure OAuth e vincule o proprietário antes de criar Gifts.' }, 409);
-    const token = randomToken(); const gift = { tenant_id: tenant.id, token_hash: await sha(token), token_cipher: await seal(token),
+    const token = randomToken(); const gift = { tenant_id: tenant.id, token_hash: await sha(token), token_cipher: await seal(token), kind: 'backup',
       internal_name: name, title, description: String(input.description || '').slice(0, 500),
       banner_url: validImage(input.banner), expires_at: expires?.toISOString() || null,
       max_uses: max, theme: input.theme ? cleanTheme(input.theme) : null,
@@ -409,7 +418,7 @@ async function admin(req: Request, path: string) {
   if (match && req.method === 'GET') {
     const { data: gift } = await db.from('valtrex_gifts').select('*').eq('id', match[1]).eq('tenant_id', tenant.id).maybeSingle();
     if (!gift) return json({ error: 'Gift não encontrado.' }, 404);
-    return json({ id: gift.id, name: gift.internal_name, title: gift.title, description: gift.description,
+    return json({ id: gift.id, name: gift.internal_name, title: gift.title, description: gift.description, kind: gift.kind,
       banner: gift.banner_url, active: gift.active, status: giftState(gift), uses: gift.uses,
       maxUses: gift.max_uses, expiresAt: gift.expires_at, createdAt: gift.created_at,
       link: `${BASE}/g/${await open(gift.token_cipher)}` });

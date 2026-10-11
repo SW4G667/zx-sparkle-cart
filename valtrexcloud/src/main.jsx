@@ -17,6 +17,7 @@ const messages = {
   incomplete: ['Configuração pendente', 'A loja ainda precisa terminar a configuração OAuth.'],
   busy: ['Muitas tentativas', 'Aguarde um minuto antes de tentar novamente.'],
   temporary: ['Erro temporário', 'Tente novamente em alguns instantes.'],
+  forbidden: ['Acesso restrito', 'Somente o proprietário desta aplicação pode usar este Gift de recuperação.'],
 };
 
 function luminance(color) {
@@ -55,35 +56,105 @@ function Shell({ children, theme = DEFAULT_THEME }) {
   </div>;
 }
 
-function GiftPage({ token }) {
+function AccessPage({ token, kind = 'backup' }) {
   const [state, setState] = useState({ loading: true });
+  const [leaving, setLeaving] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/g/${encodeURIComponent(token)}`, { signal: controller.signal, credentials: 'omit' })
+    fetch(`/api/${kind === 'verify' ? 'v' : 'g'}/${encodeURIComponent(token)}`, { signal: controller.signal, credentials: 'omit' })
       .then(async response => { const data = await response.json(); setState({ ...data, loading: false }); })
       .catch(() => { if (!controller.signal.aborted) setState({ status: 'temporary', loading: false }); });
     return () => controller.abort();
-  }, [token]);
-  if (state.loading) return <Shell><section className="card status-card" role="status" aria-live="polite"><div className="loader"/><p>Carregando convite...</p></section></Shell>;
+  }, [token, kind]);
+  if (state.loading || leaving) return <LoadingPage text={leaving ? 'Abrindo autorização oficial do Discord…' : kind === 'verify' ? 'Preparando sua verificação…' : 'Preparando o Gift…'}/>;
   if (state.status !== 'active') return <StatusPage status={state.status} />;
   const theme = { ...DEFAULT_THEME, ...state.theme };
+  const verify = kind === 'verify';
   return <Shell theme={theme}>
     <article className="card gift-card">
       {(state.banner || theme.banner) ? <img className="banner" src={state.banner || theme.banner} alt="Banner da loja" onError={e => { e.currentTarget.hidden = true; }} /> : <div className="banner-gradient" aria-hidden="true"><span>VALTREX<span className="accent">CLOUD</span></span></div>}
       <div className="card-body">
         {theme.logo ? <img className="store-logo" src={theme.logo} alt={`Logo de ${state.store}`} onError={e => { e.currentTarget.hidden = true; }} /> : <div className="store-logo store-logo-fallback" aria-hidden="true">V</div>}
-        <div className="eyebrow"><ShieldIcon/> VERIFICAÇÃO DE CONTA</div>
-        <h1>{state.title || theme.title}</h1>
-        <p className="lead">{state.description || theme.description}</p>
+        <div className="eyebrow"><ShieldIcon/> {verify ? 'VERIFICAÇÃO DO SERVIDOR' : 'GIFT DE RECUPERAÇÃO'}</div>
+        <h1>{verify ? theme.title : state.title || 'Proteja sua comunidade'}</h1>
+        <p className="lead">{verify ? theme.description : state.description || 'Faça login para preparar a recuperação de membros que consentiram com esta finalidade.'}</p>
         <div className="divider"/>
-        <div className="steps"><span className="step-number">01</span><div><strong>Autorize pelo Discord</strong><p>Você será levado ao site oficial do Discord para confirmar a identidade da sua conta.</p></div></div>
-        <div className="steps"><span className="step-number">02</span><div><strong>Conclua a verificação</strong><p>Após autorizar, você voltará a esta página e verá o resultado.</p></div></div>
-        <a className="discord-button" href={`/api/auth/start/${encodeURIComponent(token)}`}><DiscordIcon/>{theme.button || 'Continuar com Discord'}<span aria-hidden="true">↗</span></a>
-        <p className="privacy">Usamos apenas seu ID público do Discord para esta verificação. Sua senha e seu token de conta não são solicitados.</p>
+        <div className="steps"><span className="step-number">01</span><div><strong>Entre pelo Discord</strong><p>Você verá as permissões no domínio oficial discord.com.</p></div></div>
+        <div className="steps"><span className="step-number">02</span><div><strong>{verify ? 'Confirme sua conta' : 'Escolha o servidor de destino'}</strong><p>{verify ? 'A loja poderá conceder o cargo configurado. Você também autoriza a recuperação da comunidade via guilds.join.' : 'Depois do login, adicione o bot e informe quantos membros autorizados deseja recuperar.'}</p></div></div>
+        <a className="discord-button" href={`/api/auth/${verify ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={() => setLeaving(true)}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<span aria-hidden="true">↗</span></a>
+        <p className="privacy">{verify ? 'Seu consentimento para recuperação é específico desta loja. A aplicação guarda tokens OAuth protegidos no backend para a função de backup.' : 'Somente o proprietário da aplicação pode iniciar a recuperação. Nenhum membro sem autorização será transferido.'} Nunca pedimos sua senha.</p>
       </div>
     </article>
     <p className="below-card"><span>◇</span> Verificação protegida para <strong>{state.store}</strong></p>
   </Shell>;
+}
+
+function LoadingPage({ text = 'Verificando sua conta…' }) {
+  return <Shell><section className="card status-card loading-card" role="status" aria-live="polite">
+    <div className="loading-orbit"><ShieldIcon/><i/><i/></div>
+    <span className="eyebrow">CONEXÃO SEGURA · DISCORD OAUTH2</span><h1>{text}</h1>
+    <p className="lead">Estamos conferindo sua autorização com segurança. Esta página nunca solicita senha ou token de conta.</p>
+    <div className="loading-track"><span/></div>
+  </section></Shell>;
+}
+
+function SetupPage({ token }) {
+  const [state, setState] = useState({ loading: true });
+  const [guildId, setGuildId] = useState('');
+  const [count, setCount] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [job, setJob] = useState(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/gift/${encodeURIComponent(token)}`, { credentials: 'same-origin', signal: controller.signal })
+      .then(async response => { const data = await response.json(); setState(response.ok ? { ...data, loading: false } : { status: 'forbidden', loading: false }); })
+      .catch(() => { if (!controller.signal.aborted) setState({ status: 'temporary', loading: false }); });
+    return () => controller.abort();
+  }, [token]);
+  useEffect(() => {
+    if (!job?.jobId) return;
+    const poll = async () => {
+      try { const response = await fetch(`/api/gift/${encodeURIComponent(token)}/job/${job.jobId}`, { credentials: 'same-origin' });
+        if (response.ok) { const update = await response.json(); setJob(previous => ({ ...previous, ...update })); } } catch { /* tenta novamente */ }
+    };
+    poll(); const interval = setInterval(poll, 10000); return () => clearInterval(interval);
+  }, [token, job?.jobId]);
+  if (state.loading) return <LoadingPage text="Preparando sua recuperação…"/>;
+  if (state.status) return <StatusPage status={state.status}/>;
+  const invite = state.applicationId && guildId && /^\d{15,22}$/.test(guildId)
+    ? `https://discord.com/oauth2/authorize?${new URLSearchParams({ client_id: state.applicationId, scope: 'bot applications.commands', permissions: '268435456', guild_id: guildId, disable_guild_select: 'true' })}` : '';
+  const botPresent = state.botGuilds?.includes(guildId);
+  async function submit(event) {
+    event.preventDefault(); setError(''); setSaving(true);
+    try {
+      const response = await fetch(`/api/gift/${encodeURIComponent(token)}/recovery`, { method: 'POST', credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ guildId, count: Number(count) }) });
+      const data = await response.json();
+      if (!response.ok) setError(data.error || 'Não foi possível iniciar.'); else setJob(data);
+    } catch { setError('Conexão indisponível. Tente novamente.'); }
+    finally { setSaving(false); }
+  }
+  return <Shell><section className="card setup-card">
+    <div className="setup-head"><div className="status-icon"><ShieldIcon/></div><span className="eyebrow">GIFT · ACESSO DO PROPRIETÁRIO</span><h1>Recuperação da comunidade</h1>
+      <p className="lead">Use somente membros que autorizaram explicitamente esta loja. O Discord pode recusar contas com autorização revogada ou restrições.</p></div>
+    {job ? <div className="setup-form"><div className="stat"><span>Concluídos</span><strong>{job.joined ?? 0} / {job.requested}</strong></div>
+      <div className="progress"><span style={{ width: `${Math.round(((job.joined || 0) + (job.failed || 0) + (job.skipped || 0)) / job.requested * 100)}%` }}/></div>
+      <p className="lead">{job.status === 'completed' ? 'Recuperação concluída.' : job.status === 'partial' ? 'Recuperação parcial. Consulte os logs para os motivos.' : `${job.pending ?? job.requested} na fila.`} {job.skipped || 0} já estavam no servidor · {job.failed || 0} recusados.</p></div>
+      : <form className="setup-form" onSubmit={submit}>
+        <div className="stat"><span>Membros que consentiram</span><strong>{state.eligible}</strong></div>
+        <label htmlFor="guild">Servidor de destino</label><select id="guild" value={guildId} onChange={e => setGuildId(e.target.value)} required>
+          <option value="">Selecione um servidor que você administra</option>{state.guilds?.map(g => <option key={g.id} value={g.id}>{g.name} · {g.id}</option>)}
+        </select>
+        <label htmlFor="guild-id">ID do servidor</label><input id="guild-id" value={guildId} onChange={e => setGuildId(e.target.value.trim())} inputMode="numeric" pattern="[0-9]{15,22}" required placeholder="Cole o ID do servidor"/>
+        {invite && <a className="subtle-button" href={invite} target="_blank" rel="noopener noreferrer">Adicionar bot pelo Discord ↗</a>}
+        <p className="inline-note">{botPresent ? 'Bot conectado ao servidor.' : 'Após adicionar o bot, aguarde até um minuto e atualize a página.'}</p>
+        <label htmlFor="count">Quantidade solicitada</label><input id="count" value={count} onChange={e => setCount(e.target.value)} type="number" min="1" max={Math.min(500, state.eligible)} required placeholder="Ex.: 100"/>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="discord-button" type="submit" disabled={saving || !botPresent || !state.eligible}>{saving ? 'Conferindo…' : 'Iniciar recuperação consentida'}<span aria-hidden="true">→</span></button>
+        <p className="privacy">A contagem final mostra apenas as entradas aceitas pelo Discord. O limite por pedido é 500.</p>
+      </form>}
+  </section></Shell>;
 }
 
 function StatusPage({ status = 'invalid' }) {
@@ -114,10 +185,12 @@ function PreviewPage({ parts }) {
   </section></Shell>;
 }
 
-function Home() { return <Shell><section className="card home-card"><span className="eyebrow"><ShieldIcon/> VALTREXAPPLICATIONS</span><h1>Sua comunidade começa com confiança.</h1><p className="lead">Cada convite abre uma página da própria loja e conduz você à autorização oficial do Discord.</p><div className="home-trust"><span>✦ Link exclusivo por loja</span><span>⌁ Autorização oficial</span></div><div className="divider"/><div className="steps"><span className="step-number">01</span><div><strong>Abra o convite</strong><p>Receba da loja um link de verificação personalizado.</p></div></div><div className="steps"><span className="step-number">02</span><div><strong>Autorize no Discord</strong><p>Confira as permissões e confirme diretamente no site oficial.</p></div></div><div className="home-note"><ShieldIcon/><span>Seu login acontece no Discord. A ValtrexApplications nunca pede sua senha.</span></div></section></Shell>; }
+function Home() { return <Shell><section className="card home-card"><span className="eyebrow"><ShieldIcon/> VALTREXAPPLICATIONS</span><h1>Sua comunidade começa com confiança.</h1><p className="lead">A verificação usa um botão no servidor. Gifts abrem uma área separada de recuperação para o proprietário da aplicação.</p><div className="home-trust"><span>✦ Verificação por servidor</span><span>⌁ Recuperação consentida</span></div><div className="divider"/><div className="steps"><span className="step-number">01</span><div><strong>Abra o link da loja</strong><p>Use o botão Verificar no Discord ou o Gift de recuperação recebido do proprietário.</p></div></div><div className="steps"><span className="step-number">02</span><div><strong>Autorize no Discord</strong><p>Confira as permissões e confirme diretamente no site oficial.</p></div></div><div className="home-note"><ShieldIcon/><span>Seu login acontece no Discord. A ValtrexApplications nunca pede sua senha.</span></div></section></Shell>; }
 
 const path = window.location.pathname;
 const gift = path.match(/^\/g\/([A-Za-z0-9_-]+)$/);
+const giftSetup = path.match(/^\/g\/([A-Za-z0-9_-]+)\/setup$/);
+const verify = path.match(/^\/v\/(\d{15,22})$/);
 const preview = path.match(/^\/preview\/(\d{15,22})\/(\d{13})\/([0-9a-f]{64})$/);
 const status = new URLSearchParams(window.location.search).get('status');
-createRoot(document.getElementById('root')).render(gift ? <GiftPage token={gift[1]}/> : preview ? <PreviewPage parts={preview.slice(1)}/> : path === '/result' ? <StatusPage status={status}/> : path === '/' ? <Home/> : <StatusPage status="invalid"/>);
+createRoot(document.getElementById('root')).render(giftSetup ? <SetupPage token={giftSetup[1]}/> : gift ? <AccessPage token={gift[1]}/> : verify ? <AccessPage token={verify[1]} kind="verify"/> : preview ? <PreviewPage parts={preview.slice(1)}/> : path === '/result' ? <StatusPage status={status}/> : path === '/' ? <Home/> : <StatusPage status="invalid"/>);

@@ -292,7 +292,7 @@ async function giftSetup(req: Request, token: string, action: string) {
     if (!Array.isArray(session.guilds) || !session.guilds.some((g: any) => g.id === guildId))
       return json({ error: 'Sua conta não administra este servidor.' }, 403);
     if (Date.parse(tenant.bot_seen_at || '') <= Date.now() - 180_000 || !Array.isArray(tenant.bot_guild_ids) || !tenant.bot_guild_ids.includes(guildId))
-      return json({ error: 'Adicione o bot a este servidor e aguarde a conexão antes de continuar.' }, 409);
+      return json({ error: 'Adicione o bot com a permissão Criar Convite neste servidor e aguarde a conexão.' }, 409);
     if (count > (eligible || 0)) return json({ error: `Há somente ${eligible || 0} membros com autorização válida nesta loja.` }, 409);
     const { data: existing } = await db.from('valtrex_backup_jobs').select('id').eq('gift_id', gift.id)
       .eq('actor_user_id', session.discord_user_id).eq('target_guild_id', guildId).maybeSingle();

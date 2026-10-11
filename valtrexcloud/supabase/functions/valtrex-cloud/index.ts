@@ -376,13 +376,16 @@ async function admin(req: Request, path: string) {
     await log(tenant.id, 'appearance_reset'); return json({ ok: true, theme: defaults });
   }
   if (path === 'gifts' && req.method === 'GET') {
-    const { data, error } = await db.from('valtrex_gifts').select('*').eq('tenant_id', tenant.id).order('created_at', { ascending: false }).limit(100);
+    const rawPage = Number(new URL(req.url).searchParams.get('page') || 0);
+    const page = Number.isSafeInteger(rawPage) && rawPage >= 0 && rawPage <= 100000 ? rawPage : 0;
+    const { data, error, count } = await db.from('valtrex_gifts').select('*', { count: 'exact' }).eq('tenant_id', tenant.id)
+      .order('created_at', { ascending: false }).range(page * 25, page * 25 + 24);
     if (error) return json({ error: 'Falha ao carregar gifts.' }, 500);
     const gifts = await Promise.all((data || []).map(async (gift: any) => ({ id: gift.id, name: gift.internal_name,
       title: gift.title, description: gift.description, banner: gift.banner_url, active: gift.active,
       status: giftState(gift), uses: gift.uses, maxUses: gift.max_uses, expiresAt: gift.expires_at,
       createdAt: gift.created_at, theme: gift.theme, link: `${BASE}/g/${await open(gift.token_cipher)}` })));
-    return json({ gifts });
+    return json({ gifts, total: count || 0, page, pages: Math.max(1, Math.ceil((count || 0) / 25)) });
   }
   if (path === 'gifts' && req.method === 'POST') {
     const input = await body(req);
@@ -403,6 +406,14 @@ async function admin(req: Request, path: string) {
     return json({ id: data.id, link: `${BASE}/g/${token}` }, 201);
   }
   const match = path.match(/^gifts\/([0-9a-f-]{36})$/);
+  if (match && req.method === 'GET') {
+    const { data: gift } = await db.from('valtrex_gifts').select('*').eq('id', match[1]).eq('tenant_id', tenant.id).maybeSingle();
+    if (!gift) return json({ error: 'Gift não encontrado.' }, 404);
+    return json({ id: gift.id, name: gift.internal_name, title: gift.title, description: gift.description,
+      banner: gift.banner_url, active: gift.active, status: giftState(gift), uses: gift.uses,
+      maxUses: gift.max_uses, expiresAt: gift.expires_at, createdAt: gift.created_at,
+      link: `${BASE}/g/${await open(gift.token_cipher)}` });
+  }
   if (match && req.method === 'PATCH') {
     const input = await body(req); const update: Record<string, unknown> = {};
     if (typeof input.active === 'boolean') update.active = input.active;

@@ -20,6 +20,8 @@ Nenhum processo Discord permanente roda na Vercel. Tokens OAuth de membros que c
 6. A verificação solicita `identify` e `guilds.join` no Discord. A página explica o consentimento para recuperação; após o callback, o backend registra a verificação, cifra os tokens autorizados e o bot concede o cargo quando permitido.
 7. Gifts são separados. O proprietário cria quantos links quiser, respeitando expiração e limites individuais. `/g/:token` solicita login do proprietário com `identify guilds`; em seguida, ele escolhe um servidor administrado por sua conta, instala o bot pelo OAuth oficial com a permissão **Criar Convite**, informa o ID e a quantidade de membros consentidos. O backend exige a presença recente do bot com essa permissão no destino, reserva o pedido e fornece progresso real. Ingressos recusados ou membros já presentes aparecem separadamente.
 
+Gifts criados antes de R14 continuam no modo antigo de verificação (`identify`) para não invalidar links já compartilhados. Gifts novos são de recuperação. O painel indica o tipo de cada link.
+
 O Discord pode recusar ingressos por revogação de consentimento, rate limit, restrições de conta ou servidor. A quantidade solicitada é um teto, não uma garantia de ingresso. O bot não adiciona usuários que nunca autorizaram a aplicação.
 
 ## Privacidade e segurança

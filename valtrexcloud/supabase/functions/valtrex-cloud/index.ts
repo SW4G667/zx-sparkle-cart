@@ -1,6 +1,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.107.0';
 
-const BASE = 'https://systembux.vercel.app';
+// O domínio pode ser trocado no deployment sem alterar o código ou os Gifts.
+const configuredBase = (Deno.env.get('VALTREX_CLOUD_PUBLIC_URL') || 'https://valtrexapplications.vercel.app').replace(/\/$/, '');
+const BASE = /^https:\/\/[^/\s?#]+$/.test(configuredBase) ? configuredBase : 'https://valtrexapplications.vercel.app';
 const CALLBACK = `${BASE}/api/auth/discord/callback`;
 const encoder = new TextEncoder();
 const db = createClient(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '', {
@@ -119,6 +121,32 @@ async function giftByToken(token: string) {
   if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) return null;
   const { data } = await db.from('valtrex_gifts').select('*').eq('token_hash', await sha(token)).maybeSingle();
   return data;
+}
+async function bootstrap(req: Request) {
+  if (!(await limit(req, 'bootstrap', 6))) return json({ error: 'Aguarde antes de tentar novamente.' }, 429);
+  // O token pertence a uma aplicação bot, nunca a uma conta pessoal. Ele só é
+  // usado nesta chamada para consultar a identidade oficial; não é armazenado.
+  const token = (req.headers.get('authorization') || '').match(/^Bot ([A-Za-z0-9._-]{40,200})$/)?.[1];
+  if (!token) return json({ error: 'Credencial do bot inválida.' }, 401);
+  let identity: Response;
+  try {
+    identity = await fetch('https://discord.com/api/v10/users/@me', {
+      headers: { authorization: `Bot ${token}` }, signal: AbortSignal.timeout(8000),
+    });
+  } catch { return json({ error: 'Não foi possível validar a aplicação no Discord.' }, 503); }
+  if (!identity.ok) return json({ error: 'Discord recusou a credencial do bot.' }, 401);
+  const user = await identity.json();
+  if (!validId(user.id) || user.bot !== true) return json({ error: 'A credencial não pertence a uma aplicação bot.' }, 401);
+  const bridgeKey = randomToken() + randomToken();
+  const botKeyHash = await sha(bridgeKey);
+  const { data: previous } = await db.from('valtrex_tenants').select('id').eq('id', user.id).maybeSingle();
+  const operation = previous
+    ? db.from('valtrex_tenants').update({ bot_key_hash: botKeyHash, updated_at: new Date().toISOString() }).eq('id', user.id)
+    : db.from('valtrex_tenants').insert({ id: user.id, label: String(user.username || 'Valtrex').slice(0, 80), bot_key_hash: botKeyHash });
+  const { error } = await operation;
+  if (error) return json({ error: 'Não foi possível criar a integração.' }, 503);
+  await log(user.id, previous ? 'bridge_key_rotated' : 'bridge_created');
+  return json({ applicationId: user.id, bridgeKey, apiUrl: `${BASE}/api`, redirectUri: CALLBACK });
 }
 function giftState(gift: any) {
   if (!gift || !gift.active) return 'invalid';
@@ -310,6 +338,7 @@ Deno.serve(async req => {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/valtrex-cloud\/?/, '').replace(/^\/+/, '');
     if (path === 'health') return json({ service: 'ValtrexCloud', status: 'ready', redirectUri: CALLBACK });
+    if (path === 'bootstrap' && req.method === 'POST') return await bootstrap(req);
     const gift = path.match(/^g\/([A-Za-z0-9_-]+)$/);
     if (gift && req.method === 'GET') return await publicGift(gift[1]);
     const previewPath = path.match(/^preview\/(\d{15,22})\/(\d{13})\/([0-9a-f]{64})$/);

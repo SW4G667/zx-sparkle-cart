@@ -125,7 +125,7 @@ function SetupPage({ token }) {
   if (state.loading) return <LoadingPage text="Preparando sua recuperação…"/>;
   if (state.status) return <StatusPage status={state.status}/>;
   const invite = state.applicationId && guildId && /^\d{15,22}$/.test(guildId)
-    ? `https://discord.com/oauth2/authorize?${new URLSearchParams({ client_id: state.applicationId, scope: 'bot applications.commands', permissions: '268435456', guild_id: guildId, disable_guild_select: 'true' })}` : '';
+    ? `https://discord.com/oauth2/authorize?${new URLSearchParams({ client_id: state.applicationId, scope: 'bot applications.commands', permissions: '268435457', guild_id: guildId, disable_guild_select: 'true' })}` : '';
   const botPresent = state.botGuilds?.includes(guildId);
   async function submit(event) {
     event.preventDefault(); setError(''); setSaving(true);
@@ -150,7 +150,7 @@ function SetupPage({ token }) {
         </select>
         <label htmlFor="guild-id">ID do servidor</label><input id="guild-id" value={guildId} onChange={e => setGuildId(e.target.value.trim())} inputMode="numeric" pattern="[0-9]{15,22}" required placeholder="Cole o ID do servidor"/>
         {invite && <a className="subtle-button" href={invite} target="_blank" rel="noopener noreferrer">Adicionar bot pelo Discord ↗</a>}
-        <p className="inline-note">{botPresent ? 'Bot conectado ao servidor.' : 'Após adicionar o bot, aguarde até um minuto e atualize a página.'}</p>
+        <p className="inline-note">{botPresent ? 'Bot conectado e com Criar Convite no servidor.' : 'Após adicionar o bot com Criar Convite, aguarde até um minuto e atualize a página.'}</p>
         <label htmlFor="count">Quantidade solicitada</label><input id="count" value={count} onChange={e => setCount(e.target.value)} type="number" min="1" max={Math.min(500, state.eligible)} required placeholder="Ex.: 100"/>
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="discord-button" type="submit" disabled={saving || !botPresent || !state.eligible}>{saving ? 'Conferindo…' : 'Iniciar recuperação consentida'}<span aria-hidden="true">→</span></button>

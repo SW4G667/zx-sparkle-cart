@@ -70,21 +70,21 @@ function AccessPage({ token, kind = 'backup' }) {
   if (state.loading || leaving) return <LoadingPage text={leaving ? 'Abrindo autorização oficial do Discord…' : kind === 'verify' ? 'Preparando sua verificação…' : 'Preparando o Gift…'}/>;
   if (state.status !== 'active') return <StatusPage status={state.status} />;
   const theme = { ...DEFAULT_THEME, ...state.theme };
-  const verify = kind === 'verify';
+  const verify = kind === 'verify' || state.kind === 'verify';
   return <Shell theme={theme}>
     <article className="card gift-card">
       {(state.banner || theme.banner) ? <img className="banner" src={state.banner || theme.banner} alt="Banner da loja" onError={e => { e.currentTarget.hidden = true; }} /> : <div className="banner-gradient" aria-hidden="true"><span>VALTREX<span className="accent">CLOUD</span></span></div>}
       <div className="card-body">
         {theme.logo ? <img className="store-logo" src={theme.logo} alt={`Logo de ${state.store}`} onError={e => { e.currentTarget.hidden = true; }} /> : <div className="store-logo store-logo-fallback" aria-hidden="true">V</div>}
-        <div className="eyebrow"><ShieldIcon/> {verify ? 'VERIFICAÇÃO DO SERVIDOR' : 'GIFT DE RECUPERAÇÃO'}</div>
-        <h1>{verify ? theme.title : state.title || 'Proteja sua comunidade'}</h1>
-        <p className="lead">{verify ? theme.description : state.description || 'Faça login para preparar a recuperação de membros que consentiram com esta finalidade.'}</p>
+        <div className="eyebrow"><ShieldIcon/> {kind === 'verify' ? 'VERIFICAÇÃO DO SERVIDOR' : state.kind === 'verify' ? 'GIFT DE VERIFICAÇÃO ANTIGO' : 'GIFT DE RECUPERAÇÃO'}</div>
+        <h1>{kind === 'verify' ? theme.title : state.title || (verify ? theme.title : 'Proteja sua comunidade')}</h1>
+        <p className="lead">{kind === 'verify' ? theme.description : state.description || (verify ? theme.description : 'Faça login para preparar a recuperação de membros que consentiram com esta finalidade.')}</p>
         <div className="divider"/>
         <div className="steps"><span className="step-number">01</span><div><strong>Entre pelo Discord</strong><p>Você verá as permissões no domínio oficial discord.com.</p></div></div>
-        <div className="steps"><span className="step-number">02</span><div><strong>{verify ? 'Confirme sua conta' : 'Escolha o servidor de destino'}</strong><p>{verify ? 'A loja poderá conceder o cargo configurado. Você também autoriza a recuperação da comunidade via guilds.join.' : 'Depois do login, adicione o bot e informe quantos membros autorizados deseja recuperar.'}</p></div></div>
-        {verify && <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}/><span>Concordo que esta loja guarde minha autorização OAuth protegida por até 90 dias para me incluir em um servidor de recuperação se necessário. Posso revogar o acesso em <strong>Discord › Aplicativos autorizados</strong>.</span></label>}
-        <a className={`discord-button ${verify && !consent ? 'disabled-link' : ''}`} aria-disabled={verify && !consent} href={`/api/auth/${verify ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (verify && !consent) { event.preventDefault(); return; } setLeaving(true); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<span aria-hidden="true">↗</span></a>
-        <p className="privacy">{verify ? 'Sua autorização é específica desta loja. A recuperação usa somente membros que consentiram.' : 'Somente o proprietário da aplicação pode iniciar a recuperação. Nenhum membro sem autorização será transferido.'} Nunca pedimos sua senha.</p>
+        <div className="steps"><span className="step-number">02</span><div><strong>{verify ? 'Confirme sua conta' : 'Escolha o servidor de destino'}</strong><p>{kind === 'verify' ? 'A loja poderá conceder o cargo configurado. Você também autoriza a recuperação da comunidade via guilds.join.' : state.kind === 'verify' ? 'Este link antigo confirma sua identidade com identify e pode conceder o cargo configurado.' : 'Depois do login, adicione o bot e informe quantos membros autorizados deseja recuperar.'}</p></div></div>
+        {kind === 'verify' && <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}/><span>Concordo que esta loja guarde minha autorização OAuth protegida por até 90 dias para me incluir em um servidor de recuperação se necessário. Posso revogar o acesso em <strong>Discord › Aplicativos autorizados</strong>.</span></label>}
+        <a className={`discord-button ${kind === 'verify' && !consent ? 'disabled-link' : ''}`} aria-disabled={kind === 'verify' && !consent} href={`/api/auth/${kind === 'verify' ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (kind === 'verify' && !consent) { event.preventDefault(); return; } setLeaving(true); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<span aria-hidden="true">↗</span></a>
+        <p className="privacy">{kind === 'verify' ? 'Sua autorização é específica desta loja. A recuperação usa somente membros que consentiram.' : state.kind === 'verify' ? 'Este Gift antigo verifica sua conta apenas com identify. Para participar de recuperação, use o novo botão Verificar da loja.' : 'Somente o proprietário da aplicação pode iniciar a recuperação. Nenhum membro sem autorização será transferido.'} Nunca pedimos sua senha.</p>
       </div>
     </article>
     <p className="below-card"><span>◇</span> Verificação protegida para <strong>{state.store}</strong></p>

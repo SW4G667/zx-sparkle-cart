@@ -107,10 +107,15 @@ function SetupPage({ token }) {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [job, setJob] = useState(null);
+  const [repeatMode, setRepeatMode] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/gift/${encodeURIComponent(token)}`, { credentials: 'same-origin', signal: controller.signal })
-      .then(async response => { const data = await response.json(); setState(response.ok ? { ...data, loading: false } : { status: 'forbidden', loading: false }); })
+      .then(async response => { const data = await response.json(); setState(response.ok ? { ...data, loading: false } : { status: 'forbidden', loading: false });
+        if (response.ok && data.pulls?.length) { const last = data.pulls.at(-1); setJob({ jobId: last.id, requested: last.requested_count, status: last.status });
+          setGuildId(last.target_guild_id); setCount(String(Math.min(last.requested_count, data.memberLimit || 500))); } })
       .catch(() => { if (!controller.signal.aborted) setState({ status: 'temporary', loading: false }); });
     return () => controller.abort();
   }, [token]);
@@ -133,28 +138,36 @@ function SetupPage({ token }) {
       const response = await fetch(`/api/gift/${encodeURIComponent(token)}/recovery`, { method: 'POST', credentials: 'same-origin',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ guildId, count: Number(count) }) });
       const data = await response.json();
-      if (!response.ok) setError(data.error || 'Não foi possível iniciar.'); else setJob(data);
+      if (!response.ok) setError(data.error || 'Não foi possível iniciar.');
+      else { setJob(data); setRepeatMode(false); setState(previous => ({ ...previous, remainingPulls: data.remainingPulls,
+        nextPullAt: data.nextPullAt || previous.nextPullAt,
+        pulls: [...(previous.pulls || []), { id: data.jobId, requested_count: data.requested, target_guild_id: guildId, status: 'pending' }] })); }
     } catch { setError('Conexão indisponível. Tente novamente.'); }
     finally { setSaving(false); }
   }
   return <Shell><section className="card setup-card">
     <div className="setup-head"><div className="status-icon"><ShieldIcon/></div><span className="eyebrow">GIFT · ACESSO DO PROPRIETÁRIO</span><h1>Recuperação da comunidade</h1>
       <p className="lead">Use somente membros que autorizaram explicitamente esta loja. O Discord pode recusar contas com autorização revogada ou restrições.</p></div>
-    {job ? <div className="setup-form"><div className="stat"><span>Concluídos</span><strong>{job.joined ?? 0} / {job.requested}</strong></div>
+    {job && !repeatMode ? <div className="setup-form"><div className="stat"><span>Concluídos</span><strong>{job.joined ?? 0} / {job.requested}</strong></div>
       <div className="progress"><span style={{ width: `${Math.round(((job.joined || 0) + (job.failed || 0) + (job.skipped || 0)) / job.requested * 100)}%` }}/></div>
-      <p className="lead">{job.status === 'completed' ? 'Recuperação concluída.' : job.status === 'partial' ? 'Recuperação parcial. Consulte os logs para os motivos.' : `${job.pending ?? job.requested} na fila.`} {job.skipped || 0} já estavam no servidor · {job.failed || 0} recusados.</p></div>
+      <p className="lead">{job.status === 'completed' ? 'Recuperação concluída.' : job.status === 'partial' ? 'Recuperação parcial. Consulte os logs para os motivos.' : `${job.pending ?? job.requested} na fila.`} {job.skipped || 0} já estavam no servidor · {job.failed || 0} recusados.</p>
+      {state.remainingPulls > 0 ? <><p className="inline-note">Segunda e última puxada: {state.nextPullAt ? new Date(state.nextPullAt).toLocaleString('pt-BR') : 'após 24 horas'}.</p>
+        <button className="subtle-button" type="button" disabled={!['completed', 'partial', 'failed'].includes(job.status) || !state.nextPullAt || now < Date.parse(state.nextPullAt)}
+          onClick={() => { setRepeatMode(true); setError(''); }}>Puxar novamente</button></>
+        : <p className="inline-note">Este Gift já usou as duas puxadas permitidas.</p>}</div>
       : <form className="setup-form" onSubmit={submit}>
         <div className="stat"><span>Membros que consentiram</span><strong>{state.eligible}</strong></div>
-        <label htmlFor="guild">Servidor de destino</label><select id="guild" value={guildId} onChange={e => setGuildId(e.target.value)} required>
+        {repeatMode && <p className="inline-note">Segunda e última puxada para o mesmo servidor. O limite continua sendo {state.memberLimit} membros.</p>}
+        <label htmlFor="guild">Servidor de destino</label><select id="guild" value={guildId} onChange={e => setGuildId(e.target.value)} disabled={repeatMode} required>
           <option value="">Selecione um servidor que você administra</option>{state.guilds?.map(g => <option key={g.id} value={g.id}>{g.name} · {g.id}</option>)}
         </select>
-        <label htmlFor="guild-id">ID do servidor</label><input id="guild-id" value={guildId} onChange={e => setGuildId(e.target.value.trim())} inputMode="numeric" pattern="[0-9]{15,22}" required placeholder="Cole o ID do servidor"/>
+        <label htmlFor="guild-id">ID do servidor</label><input id="guild-id" value={guildId} onChange={e => setGuildId(e.target.value.trim())} readOnly={repeatMode} inputMode="numeric" pattern="[0-9]{15,22}" required placeholder="Cole o ID do servidor"/>
         {invite && <a className="subtle-button" href={invite} target="_blank" rel="noopener noreferrer">Adicionar bot pelo Discord ↗</a>}
         <p className="inline-note">{botPresent ? 'Bot conectado e com Criar Convite no servidor.' : 'Após adicionar o bot com Criar Convite, aguarde até um minuto e atualize a página.'}</p>
-        <label htmlFor="count">Quantidade solicitada</label><input id="count" value={count} onChange={e => setCount(e.target.value)} type="number" min="1" max={Math.min(500, state.eligible)} required placeholder="Ex.: 100"/>
+        <label htmlFor="count">Quantidade solicitada</label><input id="count" value={count} onChange={e => setCount(e.target.value)} type="number" min="1" max={Math.min(state.memberLimit || 500, state.eligible)} required placeholder="Ex.: 100"/>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="discord-button" type="submit" disabled={saving || !botPresent || !state.eligible}>{saving ? 'Conferindo…' : 'Iniciar recuperação consentida'}<span aria-hidden="true">→</span></button>
-        <p className="privacy">A contagem final mostra apenas as entradas aceitas pelo Discord. O limite por pedido é 500.</p>
+        <button className="discord-button" type="submit" disabled={saving || !botPresent || !state.eligible}>{saving ? 'Conferindo…' : repeatMode ? 'Puxar novamente' : 'Iniciar recuperação consentida'}<span aria-hidden="true">→</span></button>
+        <p className="privacy">A contagem final mostra apenas as entradas aceitas pelo Discord. O limite deste Gift é {state.memberLimit} por puxada.</p>
       </form>}
   </section></Shell>;
 }

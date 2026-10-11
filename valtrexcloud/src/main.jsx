@@ -59,6 +59,7 @@ function Shell({ children, theme = DEFAULT_THEME }) {
 function AccessPage({ token, kind = 'backup' }) {
   const [state, setState] = useState({ loading: true });
   const [leaving, setLeaving] = useState(false);
+  const [consent, setConsent] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/${kind === 'verify' ? 'v' : 'g'}/${encodeURIComponent(token)}`, { signal: controller.signal, credentials: 'omit' })
@@ -81,8 +82,9 @@ function AccessPage({ token, kind = 'backup' }) {
         <div className="divider"/>
         <div className="steps"><span className="step-number">01</span><div><strong>Entre pelo Discord</strong><p>Você verá as permissões no domínio oficial discord.com.</p></div></div>
         <div className="steps"><span className="step-number">02</span><div><strong>{verify ? 'Confirme sua conta' : 'Escolha o servidor de destino'}</strong><p>{verify ? 'A loja poderá conceder o cargo configurado. Você também autoriza a recuperação da comunidade via guilds.join.' : 'Depois do login, adicione o bot e informe quantos membros autorizados deseja recuperar.'}</p></div></div>
-        <a className="discord-button" href={`/api/auth/${verify ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={() => setLeaving(true)}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<span aria-hidden="true">↗</span></a>
-        <p className="privacy">{verify ? 'Seu consentimento para recuperação é específico desta loja. A aplicação guarda tokens OAuth protegidos no backend para a função de backup.' : 'Somente o proprietário da aplicação pode iniciar a recuperação. Nenhum membro sem autorização será transferido.'} Nunca pedimos sua senha.</p>
+        {verify && <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}/><span>Concordo que esta loja guarde minha autorização OAuth protegida por até 90 dias para me incluir em um servidor de recuperação se necessário. Posso revogar o acesso em <strong>Discord › Aplicativos autorizados</strong>.</span></label>}
+        <a className={`discord-button ${verify && !consent ? 'disabled-link' : ''}`} aria-disabled={verify && !consent} href={`/api/auth/${verify ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (verify && !consent) { event.preventDefault(); return; } setLeaving(true); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<span aria-hidden="true">↗</span></a>
+        <p className="privacy">{verify ? 'Sua autorização é específica desta loja. A recuperação usa somente membros que consentiram.' : 'Somente o proprietário da aplicação pode iniciar a recuperação. Nenhum membro sem autorização será transferido.'} Nunca pedimos sua senha.</p>
       </div>
     </article>
     <p className="below-card"><span>◇</span> Verificação protegida para <strong>{state.store}</strong></p>

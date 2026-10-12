@@ -1,0 +1,166 @@
+import React, { useEffect, useState } from 'react';
+import './dashboard.css';
+
+const apiRoot = '/api/portal';
+const nav = [
+  ['overview', 'Visão geral', '◈'], ['apps', 'Aplicações', '▣'],
+  ['cloud', 'Autenticação', '◇'], ['gifts', 'Gifts', '✦'],
+  ['appearance', 'Aparência', '◐'], ['logs', 'Atividade', '☷'],
+];
+
+async function request(path, { method = 'GET', data, csrf } = {}) {
+  const response = await fetch(`${apiRoot}${path}`, {
+    method, credentials: 'same-origin',
+    headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-valtrex-csrf': csrf || '' },
+    body: method === 'GET' ? undefined : JSON.stringify(data || {}),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a ação.');
+  return result;
+}
+
+function DiscordMark() {
+  return <svg width="22" height="18" viewBox="0 0 127.14 96.36" fill="currentColor" aria-hidden="true"><path d="M104.4 8.87A102.2 102.2 0 0 0 79.05.92a70.35 70.35 0 0 0-3.24 6.71 95.12 95.12 0 0 0-28.48 0A71.39 71.39 0 0 0 44.1.92 102.3 102.3 0 0 0 18.7 8.89C2.64 32.66-1.7 55.85.48 78.71a102.74 102.74 0 0 0 31.07 15.68c2.5-3.4 4.73-7 6.64-10.8a66.92 66.92 0 0 1-10.45-5.04c.88-.64 1.73-1.3 2.56-1.97 20.15 9.43 42 9.43 61.91 0 .83.68 1.68 1.34 2.56 1.98a66.28 66.28 0 0 1-10.47 5.06 87.25 87.25 0 0 0 6.64 10.79 102.35 102.35 0 0 0 31.09-15.67c2.58-26.5-4.41-49.48-18.22-69.83ZM42.45 64.67c-6.05 0-11.02-5.57-11.02-12.4s4.87-12.4 11.02-12.4c6.2 0 11.12 5.62 11.02 12.4 0 6.83-4.87 12.4-11.02 12.4Zm42.24 0c-6.05 0-11.02-5.57-11.02-12.4s4.87-12.4 11.02-12.4c6.2 0 11.12 5.62 11.02 12.4 0 6.83-4.87 12.4-11.02 12.4Z"/></svg>;
+}
+
+function Login() {
+  const [appId, setAppId] = useState(new URLSearchParams(window.location.search).get('app') || '');
+  const valid = /^\d{15,22}$/.test(appId);
+  return <main className="portal-login"><div className="portal-login-glow" aria-hidden="true"/>
+    <div className="portal-login-card"><a href="/" className="portal-brand"><span className="portal-brand-icon">V</span><span>VALTREX<span className="portal-brand-light">APPLICATIONS</span></span></a>
+      <div className="portal-overline">ÁREA DO PROPRIETÁRIO <span>01 / 02</span></div>
+      <h1>Seus bots. Seu painel.</h1><p>Entre com o Discord para gerenciar as aplicações vinculadas à sua conta.</p>
+      <label htmlFor="portal-app-id">ID da sua aplicação Discord</label>
+      <input id="portal-app-id" inputMode="numeric" autoComplete="off" value={appId} onChange={event => setAppId(event.target.value.trim())}
+        placeholder="Ex.: 123456789012345678" aria-describedby="portal-app-help" />
+      <small id="portal-app-help">Encontre este ID em /painel → ValtrexCloud → Autenticação. Ele identifica o OAuth configurado para seu bot.</small>
+      <a className={`portal-login-button${valid ? '' : ' is-disabled'}`} aria-disabled={!valid} href={valid ? `/api/auth/portal/${appId}` : undefined}
+        onClick={event => { if (!valid) event.preventDefault(); }}><DiscordMark/>Continuar com Discord<span>↗</span></a>
+      <div className="portal-login-foot"><span>OAuth2 oficial</span><span>Sem senha no site</span><span>Acesso por proprietário</span></div>
+    </div><p className="portal-powered">© Valtrex Applications · Acesso seguro via Discord</p>
+  </main>;
+}
+
+function Empty({ title, text }) { return <div className="portal-empty"><div className="portal-empty-symbol">◇</div><h3>{title}</h3><p>{text}</p></div>; }
+function Field({ label, value, onChange, type = 'text', placeholder = '', hint = '' }) {
+  return <label className="portal-field"><span>{label}</span><input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} />{hint && <small>{hint}</small>}</label>;
+}
+function Section({ eyebrow, title, description, children, action }) {
+  return <section className="portal-section"><div className="portal-section-head"><div><span className="portal-overline">{eyebrow}</span><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>{children}</section>;
+}
+
+export default function Dashboard() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [flash, setFlash] = useState('');
+  const [tab, setTab] = useState('overview');
+  const [appId, setAppId] = useState('');
+  const [config, setConfig] = useState(null);
+  const [gifts, setGifts] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [secret, setSecret] = useState('');
+  const [giftForm, setGiftForm] = useState({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresAt: '', banner: '' });
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => { request('/me').then(data => { setSession(data); setAppId(data.apps?.[0]?.id || ''); }).catch(err => { if (!/Entre novamente/.test(err.message)) setError(err.message); }).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    if (!session || !appId) return;
+    let cancelled = false;
+    setConfig(null);
+    Promise.all([request(`/apps/${appId}/config`), request(`/apps/${appId}/gifts`), request(`/apps/${appId}/logs`)])
+      .then(([c, g, l]) => { if (!cancelled) { setConfig(c); setGifts(g.gifts || []); setLogs(l.logs || []); } })
+      .catch(err => { if (!cancelled) setError(err.message); });
+    return () => { cancelled = true; };
+  }, [session, appId]);
+  const app = session?.apps?.find(item => item.id === appId);
+  const call = (path, options = {}) => request(`/apps/${appId}${path}`, { ...options, csrf: session.csrf });
+  const saveConfig = async data => {
+    setSaving(true); setError(''); setFlash('');
+    try { await call('/config', { method: 'PUT', data }); const updated = await call('/config'); setConfig(updated); setSecret(''); setFlash('Configuração salva com sucesso.'); }
+    catch (err) { setError(err.message); } finally { setSaving(false); }
+  };
+  const createGift = async event => {
+    event.preventDefault(); setSaving(true); setError(''); setFlash('');
+    try {
+      const data = { ...giftForm, memberLimit: Number(giftForm.memberLimit), maxUses: giftForm.maxUses ? Number(giftForm.maxUses) : null,
+        expiresAt: giftForm.expiresAt ? new Date(giftForm.expiresAt).toISOString() : null };
+      const created = await call('/gifts', { method: 'POST', data });
+      const listing = await call('/gifts'); setGifts(listing.gifts || []);
+      setGiftForm({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresAt: '', banner: '' });
+      await navigator.clipboard?.writeText(created.link).catch(() => {});
+      setFlash('Gift criado. O link foi copiado se o navegador permitiu.');
+    } catch (err) { setError(err.message); } finally { setSaving(false); }
+  };
+  const toggleGift = async gift => {
+    if (gift.active && !window.confirm(`Desativar o Gift “${gift.name}”?`)) return;
+    setSaving(true); setError('');
+    try { await call(`/gifts/${gift.id}`, { method: 'PATCH', data: { active: !gift.active } });
+      const listing = await call('/gifts'); setGifts(listing.gifts || []); setFlash('Gift atualizado.'); }
+    catch (err) { setError(err.message); } finally { setSaving(false); }
+  };
+  const resetTheme = async () => {
+    if (!window.confirm('Restaurar somente a aparência padrão desta aplicação?')) return;
+    setSaving(true); setError('');
+    try { await call('/theme/reset', { method: 'POST' }); setConfig(await call('/config')); setFlash('Aparência restaurada. OAuth e Gifts foram preservados.'); }
+    catch (err) { setError(err.message); } finally { setSaving(false); }
+  };
+  const logout = async () => { try { await request('/logout', { method: 'POST', csrf: session.csrf }); } finally { window.location.assign('/dashboard'); } };
+
+  if (loading) return <div className="portal-loading" role="status">Carregando seu painel…</div>;
+  if (!session) return <Login/>;
+  const count = session.apps?.length || 0;
+  return <div className="portal-app"><aside className={`portal-sidebar${menuOpen ? ' open' : ''}`}>
+    <a className="portal-brand" href="/"><span className="portal-brand-icon">V</span><span>VALTREX<span className="portal-brand-light">APPLICATIONS</span></span></a>
+    <span className="portal-sidebar-label">WORKSPACE</span>
+    <div className="portal-app-select"><span>Aplicação atual</span><select aria-label="Aplicação atual" value={appId} onChange={e => { setAppId(e.target.value); setTab('overview'); }}>
+      {session.apps?.map(item => <option key={item.id} value={item.id}>{item.label} · {item.id.slice(-4)}</option>)}</select></div>
+    <nav aria-label="Navegação do painel">{nav.map(([key, label, symbol]) => <button key={key} className={tab === key ? 'active' : ''}
+      onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><span aria-hidden="true">{symbol}</span>{label}</button>)}</nav>
+    <div className="portal-sidebar-bottom"><div className="portal-user">{session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span>{session.user.name.slice(0, 1).toUpperCase()}</span>}
+      <div><strong>{session.user.name}</strong><small>Discord conectado</small></div></div><button onClick={logout}>Sair da conta ↗</button></div>
+  </aside><div className="portal-main"><header className="portal-header"><button className="portal-menu" aria-label="Abrir menu" onClick={() => setMenuOpen(!menuOpen)}>☰</button>
+      <div className="portal-header-trail">Painel <span>/</span> {nav.find(item => item[0] === tab)?.[1]}</div><div className="portal-header-right"><span className="portal-live-dot"/> Sessão segura</div></header>
+    <main className="portal-content"><div className="portal-heading"><span className="portal-overline">VALTREX APPLICATIONS · DASHBOARD</span><h1>{tab === 'overview' ? `Olá, ${session.user.name.split(' ')[0]}.` : nav.find(item => item[0] === tab)?.[1]}</h1>
+      <p>{tab === 'overview' ? 'Acompanhe as aplicações vinculadas ao seu Discord.' : app ? `${app.label} · ${app.id}` : 'Nenhuma aplicação vinculada.'}</p></div>
+      {error && <div className="portal-alert error" role="alert">{error}<button onClick={() => setError('')} aria-label="Fechar aviso">×</button></div>}
+      {flash && <div className="portal-alert" role="status">{flash}<button onClick={() => setFlash('')} aria-label="Fechar aviso">×</button></div>}
+      {tab === 'overview' && <><div className="portal-stats"><div><span>APLICAÇÕES VINCULADAS</span><strong>{count}</strong><small>Identificadas pelo Discord</small></div><div><span>VERIFICAÇÕES</span><strong>{config?.verified ?? '—'}</strong><small>{app ? `Na aplicação ${app.label}` : 'Escolha uma aplicação'}</small></div><div><span>STATUS DO CLOUD</span><strong className="portal-stat-status">{config ? config.secretConfigured ? 'Configurado' : 'Pendente' : '—'}</strong><small>{config?.secretConfigured ? 'OAuth2 cadastrado' : 'Confira a autenticação'}</small></div></div>
+        <Section eyebrow="SUAS APLICAÇÕES" title="Gerencie em um só lugar" description="Somente bots cujo proprietário foi vinculado a este Discord aparecem aqui." action={<button className="portal-outline" onClick={() => setTab('apps')}>Ver aplicações →</button>}>
+          {count ? <div className="portal-app-grid">{session.apps.map(item => <button key={item.id} onClick={() => { setAppId(item.id); setTab('cloud'); }}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><strong>{item.label}</strong><small>ID {item.id}</small><span className="portal-arrow">↗</span></button>)}</div> : <Empty title="Nenhuma aplicação vinculada" text="Configure o proprietário em /painel → ValtrexCloud no seu bot e entre novamente."/>}</Section></>}
+      {tab === 'apps' && <Section eyebrow="APLICAÇÕES" title="Seus bots" description="Dados do Cloud compartilhado, vinculados à identidade autorizada no Discord.">
+        {count ? <div className="portal-list">{session.apps.map(item => <button key={item.id} onClick={() => { setAppId(item.id); setTab('cloud'); }}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span><strong>{item.label}</strong><small>Aplicação {item.id}</small></span><span className="portal-list-end">Gerenciar ↗</span></button>)}</div> : <Empty title="Sem aplicações" text="A vinculação depende do proprietário salvo no ValtrexCloud de cada bot."/>}</Section>}
+      {tab === 'cloud' && <Section eyebrow="VALTREXCLOUD" title="Autenticação Discord" description="O Client Secret permanece somente no backend. O formulário nunca mostra o valor salvo.">
+        {config ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ label: config.label, clientId: config.clientId || appId,
+          clientSecret: secret || undefined, guildId: config.guildId || null, backupGuildId: config.backupGuildId || null,
+          roleId: config.roleId || null, logChannelId: config.logChannelId || null }); }}>
+          <div className="portal-keyline"><span>REDIRECT URI PARA O DISCORD DEVELOPER PORTAL</span><code>{config.redirectUri}</code><button type="button" onClick={() => navigator.clipboard?.writeText(config.redirectUri)}>Copiar</button></div>
+          <p className="portal-help">Cadastre esta URL exatamente em OAuth2 → Redirects da aplicação Discord. Ao trocar o domínio, atualize também esse campo no Developer Portal.</p>
+          <div className="portal-fields"><Field label="Nome da loja" value={config.label} onChange={value => setConfig({ ...config, label: value })}/>
+            <Field label="Client ID" value={config.clientId || appId} onChange={value => setConfig({ ...config, clientId: value })}/>
+            <Field label={`Client Secret · ${config.secretConfigured ? 'salvo' : 'não configurado'}`} type="password" value={secret} onChange={setSecret} placeholder={config.secretConfigured ? 'Deixe em branco para manter' : 'Insira o segredo da aplicação'}/>
+            {['guildId', 'backupGuildId', 'roleId', 'logChannelId'].map((key, i) => <Field key={key} label={['Servidor principal · ID', 'Servidor de backup · ID', 'Cargo após verificar · ID', 'Canal de logs · ID'][i]}
+              value={config[key] || ''} onChange={value => setConfig({ ...config, [key]: value })} inputMode="numeric" />)}</div>
+          <button className="portal-primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar autenticação'}</button></form> : <Empty title="Carregando autenticação" text="Aguarde a consulta ao backend."/>}</Section>}
+      {tab === 'gifts' && <Section eyebrow="GIFTS" title="Links de recuperação" description="Cada link pode solicitar até o limite de membros consentidos que você definir.">
+        {app ? <><form className="portal-form" onSubmit={createGift}><div className="portal-fields"><Field label="Nome interno" value={giftForm.name} onChange={value => setGiftForm({ ...giftForm, name: value })}/><Field label="Título público" value={giftForm.title} onChange={value => setGiftForm({ ...giftForm, title: value })}/>
+          <Field label="Limite de membros por puxada (1 a 500)" type="number" value={giftForm.memberLimit} onChange={value => setGiftForm({ ...giftForm, memberLimit: value })}/><Field label="Máximo de usos (vazio = ilimitado)" type="number" value={giftForm.maxUses} onChange={value => setGiftForm({ ...giftForm, maxUses: value })}/>
+          <Field label="Expira em" type="datetime-local" value={giftForm.expiresAt} onChange={value => setGiftForm({ ...giftForm, expiresAt: value })}/><Field label="Banner HTTPS (opcional)" value={giftForm.banner} onChange={value => setGiftForm({ ...giftForm, banner: value })}/></div>
+          <label className="portal-field"><span>Descrição pública</span><textarea value={giftForm.description} onChange={event => setGiftForm({ ...giftForm, description: event.target.value })}/></label>
+          <button className="portal-primary" disabled={saving || !giftForm.title || !giftForm.name}>Criar Gift →</button></form>
+          <div className="portal-subsection"><h3>Gifts criados <span>{gifts.length}</span></h3>{gifts.length ? <div className="portal-list">{gifts.map(gift => <div className="portal-gift-row" key={gift.id}><span className="portal-app-icon">✦</span><span><strong>{gift.name}</strong><small>{gift.status} · {gift.uses} usos · limite {gift.memberLimit} membros</small></span>
+            <button onClick={() => navigator.clipboard?.writeText(gift.link)}>Copiar link</button><button disabled={saving} onClick={() => toggleGift(gift)}>{gift.active ? 'Desativar' : 'Ativar'}</button></div>)}</div> : <Empty title="Nenhum Gift ainda" text="Crie o primeiro link acima. Ele terá um token aleatório e pertencerá somente a esta aplicação."/>}</div></> : <Empty title="Escolha uma aplicação" text="Vincule um bot para gerenciar seus Gifts."/>}</Section>}
+      {tab === 'appearance' && <Section eyebrow="APARÊNCIA" title="Sua página, sua identidade" description="As cores e textos são isolados por aplicação. A prévia não consome Gift.">
+        {config?.theme ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ theme: config.theme }); }}><div className="portal-fields">
+          {['name', 'title', 'description', 'logo', 'banner', 'button', 'footer'].map(key => <Field key={key} label={{ name: 'Nome da loja', title: 'Título', description: 'Descrição', logo: 'Logo HTTPS', banner: 'Banner HTTPS', button: 'Texto do botão', footer: 'Rodapé' }[key]}
+            value={config.theme[key]} onChange={value => setConfig({ ...config, theme: { ...config.theme, [key]: value } })}/>)}
+          {['primary', 'secondary', 'text', 'background', 'card', 'border'].map(key => <Field key={key} label={{ primary: 'Cor principal', secondary: 'Cor secundária', text: 'Texto', background: 'Fundo', card: 'Card', border: 'Borda' }[key]}
+            type="color" value={config.theme[key] || '#101010'} onChange={value => setConfig({ ...config, theme: { ...config.theme, [key]: value } })}/>)}</div>
+          <div className="portal-actions"><button className="portal-primary" disabled={saving}>Salvar aparência</button><button type="button" className="portal-outline" disabled={saving} onClick={async () => { try { const result = await call('/preview', { method: 'POST' }); window.open(result.link, '_blank', 'noopener,noreferrer'); } catch (err) { setError(err.message); } }}>Abrir prévia ↗</button><button type="button" className="portal-text-danger" disabled={saving} onClick={resetTheme}>Resetar aparência</button></div></form>
+          : <Empty title="Carregando aparência" text="Aguarde a consulta ao backend."/>}</Section>}
+      {tab === 'logs' && <Section eyebrow="ATIVIDADE" title="Histórico do Cloud" description="Eventos da aplicação selecionada. Credenciais e tokens não aparecem aqui.">
+        {logs.length ? <div className="portal-timeline">{logs.map((item, index) => <div key={`${item.created_at}-${index}`}><span className="portal-timeline-dot"/><div><strong>{item.event.replaceAll('_', ' ')}</strong><small>{new Date(item.created_at).toLocaleString('pt-BR')}</small></div></div>)}</div> : <Empty title="Sem eventos registrados" text="Os eventos de verificação, Gifts e alterações aparecerão aqui."/>}</Section>}
+    </main><footer className="portal-footer">Valtrex Applications <span>·</span> Sessão Discord segura <span>·</span> Dados separados por aplicação</footer></div>
+  </div>;
+}

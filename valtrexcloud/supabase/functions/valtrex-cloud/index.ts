@@ -18,7 +18,10 @@ const defaults = {
   primary: '#7968f8', secondary: '#a99eff', text: '#f6f5fb',
   background: '#08090d', card: '#161821', border: '#393c4e',
   radius: 22, button: 'Continuar com Discord', footer: 'ValtrexCloud',
-  logo: '', banner: '', backgroundImage: '', success: 'Verificação concluída.',
+  logo: '', banner: '', backgroundImage: '', loadingBackgroundImage: '',
+  loadingTitle: 'Conectando com segurança',
+  loadingDescription: 'Estamos preparando sua autorização no Discord.',
+  success: 'Verificação concluída.',
   expired: 'Este convite expirou.',
 };
 
@@ -86,13 +89,13 @@ function validImage(value: unknown) {
 function cleanTheme(input: any) {
   const source = input && typeof input === 'object' ? input : {};
   const result: Record<string, string | number> = { ...defaults };
-  for (const key of ['name', 'title', 'description', 'button', 'footer', 'success', 'expired']) {
-    if (typeof source[key] === 'string') result[key] = source[key].trim().slice(0, key === 'description' ? 500 : 120);
+  for (const key of ['name', 'title', 'description', 'button', 'footer', 'success', 'expired', 'loadingTitle', 'loadingDescription']) {
+    if (typeof source[key] === 'string') result[key] = source[key].trim().slice(0, ['description', 'loadingDescription'].includes(key) ? 500 : 120);
   }
   for (const key of ['primary', 'secondary', 'text', 'background', 'card', 'border']) {
     if (typeof source[key] === 'string' && /^#[0-9a-fA-F]{6}$/.test(source[key])) result[key] = source[key];
   }
-  for (const key of ['logo', 'banner', 'backgroundImage']) if (source[key]) result[key] = validImage(source[key]);
+  for (const key of ['logo', 'banner', 'backgroundImage', 'loadingBackgroundImage']) if (source[key]) result[key] = validImage(source[key]);
   if (Number.isInteger(source.radius)) result.radius = Math.min(32, Math.max(4, source.radius));
   if (['valtrex', 'dark', 'light', 'minimal', 'custom'].includes(source.preset)) result.preset = source.preset;
   return result;
@@ -211,8 +214,10 @@ async function start(req: Request, token: string, flow: 'backup' | 'verify' | 'p
 async function startPortal(req: Request) {
   if (!(await limit(req, 'auth', 12))) return errorPage('busy');
   const clientId = PORTAL_CLIENT_ID;
-  const secret = Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET') || '';
-  if (!validId(clientId) || !secret) return errorPage('incomplete');
+  // O segredo do portal pode ser salvo pela API administrativa do próprio
+  // Manager, cifrado no backend, quando não há acesso às env vars do deploy.
+  const { data: portalApp } = await db.from('valtrex_tenants').select('client_secret_cipher').eq('id', clientId).maybeSingle();
+  if (!validId(clientId) || !(Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET') || portalApp?.client_secret_cipher)) return errorPage('incomplete');
   const state = randomToken(); const verifier = randomToken();
   const { error } = await db.from('valtrex_oauth_states').insert({
     state_hash: await sha(state), verifier_hash: await sha(verifier),
@@ -244,14 +249,15 @@ async function callback(req: Request, url: URL) {
   const { data: gift } = ['backup', 'legacy_gift', 'gift'].includes(row.flow) ? await db.from('valtrex_gifts').select('*').eq('id', row.gift_id).eq('tenant_id', row.tenant_id).maybeSingle() : { data: null };
   const globalPortal = row.flow === 'portal_global';
   const clientId = globalPortal ? PORTAL_CLIENT_ID : tenant?.client_id || '';
-  if (globalPortal ? (!validId(clientId) || !Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET')) :
+  const { data: portalApp } = globalPortal ? await db.from('valtrex_tenants').select('client_secret_cipher').eq('id', clientId).maybeSingle() : { data: null };
+  if (globalPortal ? (!validId(clientId) || !(Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET') || portalApp?.client_secret_cipher)) :
       (!tenant?.client_id || !tenant.client_secret_cipher || (!['verify', 'portal'].includes(row.flow) && !gift)))
     return redirect('/result?status=incomplete', clear);
   // A função atômica confere limite e idempotência; uma pessoa já verificada
   // pode concluir o callback mesmo que o último uso tenha preenchido o Gift.
   if (gift && ['invalid', 'expired'].includes(giftState(gift))) return redirect(`/result?status=${giftState(gift)}`, clear);
   try {
-    const secret = globalPortal ? Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET')! : await open(tenant.client_secret_cipher);
+    const secret = globalPortal ? (Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET') || await open(portalApp!.client_secret_cipher)) : await open(tenant.client_secret_cipher);
     const token = await fetch('https://discord.com/api/v10/oauth2/token', {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ client_id: clientId, client_secret: secret, grant_type: 'authorization_code', code, redirect_uri: CALLBACK }),

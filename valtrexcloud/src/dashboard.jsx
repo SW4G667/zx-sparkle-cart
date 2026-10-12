@@ -89,7 +89,7 @@ export default function Dashboard() {
   const [logs, setLogs] = useState([]);
   const [saving, setSaving] = useState(false);
   const [secret, setSecret] = useState('');
-  const [giftForm, setGiftForm] = useState({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresAt: '', banner: '' });
+  const [giftForm, setGiftForm] = useState({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresDays: '', count: '1', banner: '' });
   const [menuOpen, setMenuOpen] = useState(false);
   const [managedDetail, setManagedDetail] = useState('');
 
@@ -116,13 +116,30 @@ export default function Dashboard() {
   const createGift = async event => {
     event.preventDefault(); setSaving(true); setError(''); setFlash('');
     try {
-      const data = { ...giftForm, memberLimit: Number(giftForm.memberLimit), maxUses: giftForm.maxUses ? Number(giftForm.maxUses) : null,
-        expiresAt: giftForm.expiresAt ? new Date(giftForm.expiresAt).toISOString() : null };
-      const created = await call('/gifts', { method: 'POST', data });
+      const count = Number(giftForm.count || 1);
+      const days = giftForm.expiresDays ? Number(giftForm.expiresDays) : null;
+      const members = Number(giftForm.memberLimit);
+      if (!Number.isInteger(count) || count < 1 || count > 10) throw new Error('Gere de 1 a 10 Gifts por vez.');
+      if (days !== null && (!Number.isInteger(days) || days < 1 || days > 3650)) throw new Error('A validade deve ser de 1 a 3650 dias.');
+      if (!Number.isInteger(members) || members < 1 || members > 500) throw new Error('O limite de membros deve ser de 1 a 500.');
+      const { expiresDays, count: _count, ...fields } = giftForm;
+      const data = { ...fields, memberLimit: members, maxUses: giftForm.maxUses ? Number(giftForm.maxUses) : null,
+        expiresAt: days ? new Date(Date.now() + days * 86400000).toISOString() : null };
+      const links = [];
+      let batchError = null;
+      for (let index = 0; index < count; index++) {
+        try {
+          const created = await call('/gifts', { method: 'POST', data: { ...data, name: count > 1 ? `${data.name} ${index + 1}` : data.name } });
+          links.push(created.link);
+        } catch (err) { batchError = err; break; }
+      }
       const listing = await call('/gifts'); setGifts(listing.gifts || []);
-      setGiftForm({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresAt: '', banner: '' });
-      await navigator.clipboard?.writeText(created.link).catch(() => {});
-      setFlash('Gift criado. O link foi copiado se o navegador permitiu.');
+      if (links.length) {
+        setGiftForm({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresDays: '', count: '1', banner: '' });
+        await navigator.clipboard?.writeText(links.join('\n')).catch(() => {});
+        setFlash(`${links.length} de ${count} Gift(s) criado(s). Links copiados se o navegador permitiu.`);
+      }
+      if (batchError) setError(`O lote parou após ${links.length} Gift(s): ${batchError.message}`);
     } catch (err) { setError(err.message); } finally { setSaving(false); }
   };
   const toggleGift = async gift => {
@@ -181,14 +198,14 @@ export default function Dashboard() {
       {tab === 'gifts' && <Section eyebrow="GIFTS" title="Links de recuperação" description="Cada link pode solicitar até o limite de membros consentidos que você definir.">
         {app ? <><form className="portal-form" onSubmit={createGift}><div className="portal-fields"><Field label="Nome interno" value={giftForm.name} onChange={value => setGiftForm({ ...giftForm, name: value })}/><Field label="Título público" value={giftForm.title} onChange={value => setGiftForm({ ...giftForm, title: value })}/>
           <Field label="Limite de membros por puxada (1 a 500)" type="number" value={giftForm.memberLimit} onChange={value => setGiftForm({ ...giftForm, memberLimit: value })}/><Field label="Máximo de usos (vazio = ilimitado)" type="number" value={giftForm.maxUses} onChange={value => setGiftForm({ ...giftForm, maxUses: value })}/>
-          <Field label="Expira em" type="datetime-local" value={giftForm.expiresAt} onChange={value => setGiftForm({ ...giftForm, expiresAt: value })}/><Field label="Banner HTTPS (opcional)" value={giftForm.banner} onChange={value => setGiftForm({ ...giftForm, banner: value })}/></div>
+          <Field label="Validade em dias (vazio = sem prazo)" type="number" value={giftForm.expiresDays} onChange={value => setGiftForm({ ...giftForm, expiresDays: value })}/><Field label="Quantos Gifts gerar (1 a 10)" type="number" value={giftForm.count} onChange={value => setGiftForm({ ...giftForm, count: value })}/><Field label="Banner HTTPS (opcional)" value={giftForm.banner} onChange={value => setGiftForm({ ...giftForm, banner: value })}/></div>
           <label className="portal-field"><span>Descrição pública</span><textarea value={giftForm.description} onChange={event => setGiftForm({ ...giftForm, description: event.target.value })}/></label>
           <button className="portal-primary" disabled={saving || !giftForm.title || !giftForm.name}>Criar Gift →</button></form>
           <div className="portal-subsection"><h3>Gifts criados <span>{gifts.length}</span></h3>{gifts.length ? <div className="portal-list">{gifts.map(gift => <div className="portal-gift-row" key={gift.id}><span className="portal-app-icon">✦</span><span><strong>{gift.name}</strong><small>{gift.status} · {gift.uses} usos · limite {gift.memberLimit} membros</small></span>
             <button onClick={() => navigator.clipboard?.writeText(gift.link)}>Copiar link</button><button disabled={saving} onClick={() => toggleGift(gift)}>{gift.active ? 'Desativar' : 'Ativar'}</button></div>)}</div> : <Empty title="Nenhum Gift ainda" text="Crie o primeiro link acima. Ele terá um token aleatório e pertencerá somente a esta aplicação."/>}</div></> : <Empty title="Escolha uma aplicação" text="Vincule um bot para gerenciar seus Gifts."/>}</Section>}
       {tab === 'appearance' && <Section eyebrow="APARÊNCIA" title="Sua página, sua identidade" description="As cores e textos são isolados por aplicação. A prévia não consome Gift.">
         {config?.theme ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ theme: config.theme }); }}><div className="portal-fields">
-          {['name', 'title', 'description', 'logo', 'banner', 'button', 'footer'].map(key => <Field key={key} label={{ name: 'Nome da loja', title: 'Título', description: 'Descrição', logo: 'Logo HTTPS', banner: 'Banner HTTPS', button: 'Texto do botão', footer: 'Rodapé' }[key]}
+          {['name', 'title', 'description', 'logo', 'banner', 'backgroundImage', 'loadingTitle', 'loadingDescription', 'loadingBackgroundImage', 'button', 'footer'].map(key => <Field key={key} label={{ name: 'Nome da loja', title: 'Título', description: 'Descrição', logo: 'Logo HTTPS', banner: 'Banner HTTPS', backgroundImage: 'Fundo da página HTTPS', loadingTitle: 'Título do carregamento', loadingDescription: 'Descrição do carregamento', loadingBackgroundImage: 'Fundo do carregamento HTTPS', button: 'Texto do botão', footer: 'Rodapé' }[key]}
             value={config.theme[key]} onChange={value => setConfig({ ...config, theme: { ...config.theme, [key]: value } })}/>)}
           {['primary', 'secondary', 'text', 'background', 'card', 'border'].map(key => <Field key={key} label={{ primary: 'Cor principal', secondary: 'Cor secundária', text: 'Texto', background: 'Fundo', card: 'Card', border: 'Borda' }[key]}
             type="color" value={config.theme[key] || '#101010'} onChange={value => setConfig({ ...config, theme: { ...config.theme, [key]: value } })}/>)}</div>

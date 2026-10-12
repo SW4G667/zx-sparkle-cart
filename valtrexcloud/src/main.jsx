@@ -7,6 +7,7 @@ const DEFAULT_THEME = {
   name: 'Valtrex', title: 'Verifique sua conta', description: 'Conecte sua conta Discord para concluir a verificação.',
   primary: '#7968f8', secondary: '#a99eff', text: '#f6f5fb', background: '#08090d', card: '#161821',
   border: '#393c4e', radius: 22, button: 'Continuar com Discord', footer: 'ValtrexCloud',
+  loadingTitle: 'Conectando com segurança', loadingDescription: 'Estamos preparando sua autorização no Discord.',
 };
 const messages = {
   success: ['Verificação concluída', 'Sua conta Discord foi verificada. Se a loja configurou um cargo, ele será concedido em instantes.'],
@@ -68,7 +69,9 @@ function AccessPage({ token, kind = 'backup' }) {
       .catch(() => { if (!controller.signal.aborted) setState({ status: 'temporary', loading: false }); });
     return () => controller.abort();
   }, [token, kind]);
-  if (state.loading || leaving) return <LoadingPage text={leaving ? 'Abrindo autorização oficial do Discord…' : kind === 'verify' ? 'Preparando sua verificação…' : 'Preparando o Gift…'}/>;
+  if (state.loading || leaving) return <LoadingPage theme={state.theme ? { ...DEFAULT_THEME, ...state.theme } : DEFAULT_THEME}
+    text={leaving ? 'Abrindo autorização oficial do Discord…' : kind === 'verify' ? 'Preparando sua verificação…' : 'Preparando o Gift…'}
+    linkValidated={leaving}/>;
   if (state.status !== 'active') return <StatusPage status={state.status} />;
   const theme = { ...DEFAULT_THEME, ...state.theme };
   const verify = kind === 'verify' || state.kind === 'verify';
@@ -84,7 +87,7 @@ function AccessPage({ token, kind = 'backup' }) {
         <div className="steps"><span className="step-number">01</span><div><strong>Entre pelo Discord</strong><p>Você verá as permissões no domínio oficial discord.com.</p></div></div>
         <div className="steps"><span className="step-number">02</span><div><strong>{verify ? 'Confirme sua conta' : 'Escolha o servidor de destino'}</strong><p>{kind === 'verify' ? 'A loja poderá conceder o cargo configurado. Você também autoriza a recuperação da comunidade via guilds.join.' : state.kind === 'verify' ? 'Este link antigo confirma sua identidade com identify e pode conceder o cargo configurado.' : 'Depois do login, adicione o bot e informe quantos membros autorizados deseja recuperar.'}</p></div></div>
         {kind === 'verify' && <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}/><span>Concordo que esta loja guarde minha autorização OAuth protegida por até 90 dias para me incluir em um servidor de recuperação se necessário. Posso revogar o acesso em <strong>Discord › Aplicativos autorizados</strong>.</span></label>}
-        <a className={`discord-button ${kind === 'verify' && !consent ? 'disabled-link' : ''}`} aria-disabled={kind === 'verify' && !consent} href={`/api/auth/${kind === 'verify' ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (kind === 'verify' && !consent) { event.preventDefault(); return; } setLeaving(true); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<span aria-hidden="true">↗</span></a>
+        <a className={`discord-button ${kind === 'verify' && !consent ? 'disabled-link' : ''}`} aria-disabled={kind === 'verify' && !consent} href={`/api/auth/${kind === 'verify' ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (kind === 'verify' && !consent) { event.preventDefault(); return; } const target = event.currentTarget.href; event.preventDefault(); setLeaving(true); window.setTimeout(() => window.location.assign(target), 650); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<span aria-hidden="true">↗</span></a>
         <p className="privacy">{kind === 'verify' ? 'Sua autorização é específica desta loja. A recuperação usa somente membros que consentiram.' : state.kind === 'verify' ? 'Este Gift antigo verifica sua conta apenas com identify. Para participar de recuperação, use o novo botão Verificar da loja.' : 'Somente o proprietário da aplicação pode iniciar a recuperação. Nenhum membro sem autorização será transferido.'} Nunca pedimos sua senha.</p>
       </div>
     </article>
@@ -92,12 +95,17 @@ function AccessPage({ token, kind = 'backup' }) {
   </Shell>;
 }
 
-function LoadingPage({ text = 'Verificando sua conta…' }) {
-  return <Shell><section className="card status-card loading-card" role="status" aria-live="polite">
+function LoadingPage({ text = 'Verificando sua conta…', theme = DEFAULT_THEME, linkValidated = false }) {
+  const loadingTheme = { ...theme, backgroundImage: theme.loadingBackgroundImage || theme.backgroundImage };
+  return <Shell theme={loadingTheme}><section className="card status-card loading-card" role="status" aria-live="polite">
     <div className="loading-orbit"><ShieldIcon/><i/><i/></div>
-    <span className="eyebrow">CONEXÃO SEGURA · DISCORD OAUTH2</span><h1>{text}</h1>
-    <p className="lead">Estamos conferindo sua autorização com segurança. Esta página nunca solicita senha ou token de conta.</p>
+    <span className="eyebrow">VALTREXCLOUD · CONEXÃO SEGURA</span><h1>{theme.loadingTitle || text}</h1>
+    <p className="lead">{theme.loadingDescription || text}</p>
+    <div className="loading-steps"><div className={linkValidated ? 'complete' : 'current'}><span>{linkValidated ? '✓' : '01'}</span><div><strong>Preparando seu link</strong><small>Verificando as informações da loja</small></div></div>
+      <div className={linkValidated ? 'current' : ''}><span>02</span><div><strong>Autorização no Discord</strong><small>Você confirma o acesso no site oficial</small></div></div>
+      <div><span>03</span><div><strong>Conclusão</strong><small>O resultado aparecerá depois da autorização</small></div></div></div>
     <div className="loading-track"><span/></div>
+    <p className="loading-privacy">Nunca pedimos senha ou token de conta.</p>
   </section></Shell>;
 }
 
@@ -201,7 +209,7 @@ function PreviewPage({ parts }) {
   </section></Shell>;
 }
 
-function Home() { return <Shell><section className="card home-card"><span className="eyebrow"><ShieldIcon/> VALTREXAPPLICATIONS</span><h1>Sua comunidade começa com confiança.</h1><p className="lead">A verificação usa um botão no servidor. Gifts abrem uma área separada de recuperação para o proprietário da aplicação.</p><div className="home-trust"><span>✦ Verificação por servidor</span><span>⌁ Recuperação consentida</span></div><div className="divider"/><div className="steps"><span className="step-number">01</span><div><strong>Abra o link da loja</strong><p>Use o botão Verificar no Discord ou o Gift de recuperação recebido do proprietário.</p></div></div><div className="steps"><span className="step-number">02</span><div><strong>Autorize no Discord</strong><p>Confira as permissões e confirme diretamente no site oficial.</p></div></div><a className="subtle-button" href="/dashboard">Painel do proprietário <span aria-hidden="true">→</span></a><div className="home-note"><ShieldIcon/><span>Seu login acontece no Discord. A ValtrexApplications nunca pede sua senha.</span></div></section></Shell>; }
+function Home() { return <Shell><div className="site-home"><section className="site-home-hero"><div className="site-home-copy"><span className="site-home-kicker"><ShieldIcon/> VALTREXAPPLICATIONS · VALTREXCLOUD</span><h1>Seu servidor,<br/><em>sob seu controle.</em></h1><p>Gerencie seus bots, prepare a verificação com Discord e compartilhe Gifts de recuperação em um único lugar.</p><div className="site-home-actions"><a className="site-home-primary" href="/api/auth/portal"><DiscordIcon/> Entrar com Discord <span aria-hidden="true">↗</span></a><a className="site-home-secondary" href="#como-funciona">Entenda o processo <span aria-hidden="true">↓</span></a></div><div className="site-home-footnote"><ShieldIcon/> Autorização oficial do Discord. Nunca pedimos sua senha.</div></div><div className="site-home-visual" aria-hidden="true"><div className="site-home-art"/><div className="site-home-visual-label"><span className="secure-dot"/> CONEXÃO PROTEGIDA <strong>ValtrexCloud</strong></div></div></section><section className="site-home-features" id="como-funciona" aria-label="Como funciona"><div><span>01 / VERIFICAÇÃO</span><h2>Um clique para começar</h2><p>Publique o botão de verificação no seu servidor. O visitante autoriza no Discord e recebe o resultado.</p></div><div><span>02 / GIFTS</span><h2>Links da sua loja</h2><p>Crie links com validade e limite de uso. Cada página usa a aparência configurada para sua aplicação.</p></div><div><span>03 / PAINEL</span><h2>Todas as aplicações</h2><p>Entre com sua conta Discord para ver os bots vinculados ao mesmo proprietário e as configurações disponíveis.</p></div></section></div></Shell>; }
 
 const path = window.location.pathname;
 const gift = path.match(/^\/g\/([A-Za-z0-9_-]+)$/);

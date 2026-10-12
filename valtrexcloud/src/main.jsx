@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import Dashboard from './dashboard.jsx';
 
 const DEFAULT_THEME = {
   name: 'Valtrex', title: 'Verifique sua conta', description: 'Conecte sua conta Discord para concluir a verificação.',
@@ -200,7 +201,7 @@ function PreviewPage({ parts }) {
   </section></Shell>;
 }
 
-function Home() { return <Shell><section className="card home-card"><span className="eyebrow"><ShieldIcon/> VALTREXAPPLICATIONS</span><h1>Sua comunidade começa com confiança.</h1><p className="lead">A verificação usa um botão no servidor. Gifts abrem uma área separada de recuperação para o proprietário da aplicação.</p><div className="home-trust"><span>✦ Verificação por servidor</span><span>⌁ Recuperação consentida</span></div><div className="divider"/><div className="steps"><span className="step-number">01</span><div><strong>Abra o link da loja</strong><p>Use o botão Verificar no Discord ou o Gift de recuperação recebido do proprietário.</p></div></div><div className="steps"><span className="step-number">02</span><div><strong>Autorize no Discord</strong><p>Confira as permissões e confirme diretamente no site oficial.</p></div></div><div className="home-note"><ShieldIcon/><span>Seu login acontece no Discord. A ValtrexApplications nunca pede sua senha.</span></div></section></Shell>; }
+function Home() { return <Shell><section className="card home-card"><span className="eyebrow"><ShieldIcon/> VALTREXAPPLICATIONS</span><h1>Sua comunidade começa com confiança.</h1><p className="lead">A verificação usa um botão no servidor. Gifts abrem uma área separada de recuperação para o proprietário da aplicação.</p><div className="home-trust"><span>✦ Verificação por servidor</span><span>⌁ Recuperação consentida</span></div><div className="divider"/><div className="steps"><span className="step-number">01</span><div><strong>Abra o link da loja</strong><p>Use o botão Verificar no Discord ou o Gift de recuperação recebido do proprietário.</p></div></div><div className="steps"><span className="step-number">02</span><div><strong>Autorize no Discord</strong><p>Confira as permissões e confirme diretamente no site oficial.</p></div></div><a className="subtle-button" href="/dashboard">Painel do proprietário <span aria-hidden="true">→</span></a><div className="home-note"><ShieldIcon/><span>Seu login acontece no Discord. A ValtrexApplications nunca pede sua senha.</span></div></section></Shell>; }
 
 const path = window.location.pathname;
 const gift = path.match(/^\/g\/([A-Za-z0-9_-]+)$/);
@@ -208,4 +209,4 @@ const giftSetup = path.match(/^\/g\/([A-Za-z0-9_-]+)\/setup$/);
 const verify = path.match(/^\/v\/(\d{15,22})$/);
 const preview = path.match(/^\/preview\/(\d{15,22})\/(\d{13})\/([0-9a-f]{64})$/);
 const status = new URLSearchParams(window.location.search).get('status');
-createRoot(document.getElementById('root')).render(giftSetup ? <SetupPage token={giftSetup[1]}/> : gift ? <AccessPage token={gift[1]}/> : verify ? <AccessPage token={verify[1]} kind="verify"/> : preview ? <PreviewPage parts={preview.slice(1)}/> : path === '/result' ? <StatusPage status={status}/> : path === '/' ? <Home/> : <StatusPage status="invalid"/>);
+createRoot(document.getElementById('root')).render(path === '/dashboard' ? <Dashboard/> : giftSetup ? <SetupPage token={giftSetup[1]}/> : gift ? <AccessPage token={gift[1]}/> : verify ? <AccessPage token={verify[1]} kind="verify"/> : preview ? <PreviewPage parts={preview.slice(1)}/> : path === '/result' ? <StatusPage status={status}/> : path === '/' ? <Home/> : <StatusPage status="invalid"/>);

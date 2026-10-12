@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './dashboard.css';
+import './dashboard-refresh.css';
 
 const apiRoot = '/api/portal';
 const nav = [
@@ -7,6 +8,16 @@ const nav = [
   ['cloud', 'Autenticação', '◇'], ['gifts', 'Gifts', '✦'],
   ['appearance', 'Aparência', '◐'], ['logs', 'Atividade', '☷'],
 ];
+const icons = {
+  overview: <><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21v-8h6v8"/></>,
+  apps: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
+  cloud: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></>,
+  gifts: <><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M12 9v12M2 9h20M12 9c-4-1-5-6-2-6 2 0 2 3 2 6Zm0 0c4-1 5-6 2-6-2 0-2 3-2 6Z"/></>,
+  appearance: <><circle cx="12" cy="12" r="9"/><circle cx="8" cy="9" r="1"/><circle cx="15" cy="8" r="1"/><circle cx="17" cy="13" r="1"/><path d="M12 21a3 3 0 0 1 0-6h1a2 2 0 0 0 0-4"/></>,
+  logs: <><path d="M4 20V11M9 20V5M14 20v-8M19 20V3"/></>,
+};
+function Icon({ name, size = 19 }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[name] || icons.apps}</svg>; }
+function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true">V</span><span>VALTREX<span className="portal-brand-light">APPLICATIONS</span></span></a>; }
 
 async function request(path, { method = 'GET', data, csrf } = {}) {
   const response = await fetch(`${apiRoot}${path}`, {
@@ -26,19 +37,19 @@ function DiscordMark() {
 function Login() {
   const [appId, setAppId] = useState(new URLSearchParams(window.location.search).get('app') || '');
   const valid = /^\d{15,22}$/.test(appId);
-  return <main className="portal-login"><div className="portal-login-glow" aria-hidden="true"/>
-    <div className="portal-login-card"><a href="/" className="portal-brand"><span className="portal-brand-icon">V</span><span>VALTREX<span className="portal-brand-light">APPLICATIONS</span></span></a>
-      <div className="portal-overline">ÁREA DO PROPRIETÁRIO <span>01 / 02</span></div>
-      <h1>Seus bots. Seu painel.</h1><p>Entre com o Discord para gerenciar as aplicações vinculadas à sua conta.</p>
-      <label htmlFor="portal-app-id">ID da sua aplicação Discord</label>
-      <input id="portal-app-id" inputMode="numeric" autoComplete="off" value={appId} onChange={event => setAppId(event.target.value.trim())}
-        placeholder="Ex.: 123456789012345678" aria-describedby="portal-app-help" />
-      <small id="portal-app-help">Encontre este ID em /painel → ValtrexCloud → Autenticação. Ele identifica o OAuth configurado para seu bot.</small>
-      <a className={`portal-login-button${valid ? '' : ' is-disabled'}`} aria-disabled={!valid} href={valid ? `/api/auth/portal/${appId}` : undefined}
-        onClick={event => { if (!valid) event.preventDefault(); }}><DiscordMark/>Continuar com Discord<span>↗</span></a>
-      <div className="portal-login-foot"><span>OAuth2 oficial</span><span>Sem senha no site</span><span>Acesso por proprietário</span></div>
-    </div><p className="portal-powered">© Valtrex Applications · Acesso seguro via Discord</p>
-  </main>;
+  return <main className="portal-login"><div className="portal-login-shell">
+    <div className="portal-login-copy"><Brand/><div className="portal-login-content">
+      <h1>Tudo o que é seu,<br/>em um <em>só lugar.</em></h1>
+      <p>Entre com sua conta Discord para acessar todas as aplicações Valtrex vinculadas a você.</p>
+      <a className="portal-login-button" href="/api/auth/portal"><DiscordMark/>Continuar com Discord <span aria-hidden="true">→</span></a>
+      <div className="portal-login-reassurance"><Icon name="cloud" size={18}/> Autenticação oficial do Discord. Seus dados ficam protegidos.</div>
+    </div><div className="portal-login-compat"><details><summary>Usar acesso de uma aplicação já configurada</summary>
+      <label htmlFor="portal-app-id">ID da aplicação</label>
+      <div><input id="portal-app-id" inputMode="numeric" autoComplete="off" value={appId} onChange={event => setAppId(event.target.value.trim())} placeholder="ID da aplicação Discord"/>
+      <a href={valid ? `/api/auth/portal/${appId}` : undefined} aria-disabled={!valid} onClick={event => { if (!valid) event.preventDefault(); }}>Entrar</a></div>
+    </details></div></div>
+    <div className="portal-login-art" aria-hidden="true"><img src="/portal-network.png" alt=""/></div>
+  </div><p className="portal-powered">Valtrex Applications · OAuth2 oficial do Discord</p></main>;
 }
 
 function Empty({ title, text }) { return <div className="portal-empty"><div className="portal-empty-symbol">◇</div><h3>{title}</h3><p>{text}</p></div>; }
@@ -47,6 +58,23 @@ function Field({ label, value, onChange, type = 'text', placeholder = '', hint =
 }
 function Section({ eyebrow, title, description, children, action }) {
   return <section className="portal-section"><div className="portal-section-head"><div><span className="portal-overline">{eyebrow}</span><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>{children}</section>;
+}
+const appStatus = { active: 'Plano ativo', suspended: 'Acesso suspenso', expired: 'Plano vencido', unknown: 'Status não informado' };
+const appProfile = { sales: 'Valtrexsallers', robux: 'Valtrexbuxx', other: 'Aplicação' };
+function ownedApps(session) {
+  const cloud = session?.apps || [];
+  const managed = session?.managedApps || [];
+  const matched = new Set();
+  const combined = managed.map(item => {
+    const tenant = cloud.find(app => app.id === item.bot_id || app.id === item.manager_app_id);
+    if (tenant) matched.add(tenant.id);
+    return { id: item.manager_app_id, label: item.label, cloudId: tenant?.id || null,
+      profile: item.profile, status: item.status, expiresAt: item.expires_at,
+      botId: item.bot_id, source: 'manager' };
+  });
+  for (const item of cloud) if (!matched.has(item.id)) combined.push({ id: item.id, label: item.label,
+    cloudId: item.id, profile: 'other', status: 'unknown', expiresAt: null, source: 'cloud' });
+  return combined;
 }
 
 export default function Dashboard() {
@@ -63,18 +91,22 @@ export default function Dashboard() {
   const [secret, setSecret] = useState('');
   const [giftForm, setGiftForm] = useState({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresAt: '', banner: '' });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [managedDetail, setManagedDetail] = useState('');
 
   useEffect(() => { request('/me').then(data => { setSession(data); setAppId(data.apps?.[0]?.id || ''); }).catch(err => { if (!/Entre novamente/.test(err.message)) setError(err.message); }).finally(() => setLoading(false)); }, []);
   useEffect(() => {
     if (!session || !appId) return;
     let cancelled = false;
-    setConfig(null);
+    setConfig(null); setGifts([]); setLogs([]);
     Promise.all([request(`/apps/${appId}/config`), request(`/apps/${appId}/gifts`), request(`/apps/${appId}/logs`)])
       .then(([c, g, l]) => { if (!cancelled) { setConfig(c); setGifts(g.gifts || []); setLogs(l.logs || []); } })
       .catch(err => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, [session, appId]);
   const app = session?.apps?.find(item => item.id === appId);
+  const visibleApps = ownedApps(session);
+  const selectedManaged = visibleApps.find(item => item.id === managedDetail);
+  const openApp = item => { if (item.cloudId) { setAppId(item.cloudId); setTab('cloud'); } else { setManagedDetail(item.id); setTab('apps'); } setMenuOpen(false); };
   const call = (path, options = {}) => request(`/apps/${appId}${path}`, { ...options, csrf: session.csrf });
   const saveConfig = async data => {
     setSaving(true); setError(''); setFlash('');
@@ -107,30 +139,33 @@ export default function Dashboard() {
     catch (err) { setError(err.message); } finally { setSaving(false); }
   };
   const logout = async () => { try { await request('/logout', { method: 'POST', csrf: session.csrf }); } finally { window.location.assign('/dashboard'); } };
+  const refreshApps = async () => { try { const data = await request('/me'); setSession(data); if (!data.apps?.some(item => item.id === appId)) { setAppId(data.apps?.[0]?.id || ''); setConfig(null); setGifts([]); setLogs([]); } setFlash('Aplicações atualizadas.'); } catch (err) { setError(err.message); } };
 
   if (loading) return <div className="portal-loading" role="status">Carregando seu painel…</div>;
   if (!session) return <Login/>;
-  const count = session.apps?.length || 0;
-  return <div className="portal-app"><aside className={`portal-sidebar${menuOpen ? ' open' : ''}`}>
-    <a className="portal-brand" href="/"><span className="portal-brand-icon">V</span><span>VALTREX<span className="portal-brand-light">APPLICATIONS</span></span></a>
-    <span className="portal-sidebar-label">WORKSPACE</span>
-    <div className="portal-app-select"><span>Aplicação atual</span><select aria-label="Aplicação atual" value={appId} onChange={e => { setAppId(e.target.value); setTab('overview'); }}>
+  const count = visibleApps.length;
+  return <div className="portal-app">{menuOpen && <button className="portal-menu-backdrop" aria-label="Fechar menu" onClick={() => setMenuOpen(false)}/>}<aside className={`portal-sidebar${menuOpen ? ' open' : ''}`}>
+    <Brand/>
+    <span className="portal-sidebar-label">PAINEL</span>
+    <div className="portal-app-select"><span>Cloud da aplicação</span><select aria-label="Aplicação atual" value={appId} onChange={e => { setAppId(e.target.value); setTab('overview'); }} disabled={!session.apps?.length}>
+      {!session.apps?.length && <option value="">Nenhum bot configurado</option>}
       {session.apps?.map(item => <option key={item.id} value={item.id}>{item.label} · {item.id.slice(-4)}</option>)}</select></div>
-    <nav aria-label="Navegação do painel">{nav.map(([key, label, symbol]) => <button key={key} className={tab === key ? 'active' : ''}
-      onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><span aria-hidden="true">{symbol}</span>{label}</button>)}</nav>
+    <nav aria-label="Navegação do painel">{nav.map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''}
+      onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><Icon name={key}/>{label}</button>)}</nav>
     <div className="portal-sidebar-bottom"><div className="portal-user">{session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span>{session.user.name.slice(0, 1).toUpperCase()}</span>}
       <div><strong>{session.user.name}</strong><small>Discord conectado</small></div></div><button onClick={logout}>Sair da conta ↗</button></div>
   </aside><div className="portal-main"><header className="portal-header"><button className="portal-menu" aria-label="Abrir menu" onClick={() => setMenuOpen(!menuOpen)}>☰</button>
-      <div className="portal-header-trail">Painel <span>/</span> {nav.find(item => item[0] === tab)?.[1]}</div><div className="portal-header-right"><span className="portal-live-dot"/> Sessão segura</div></header>
-    <main className="portal-content"><div className="portal-heading"><span className="portal-overline">VALTREX APPLICATIONS · DASHBOARD</span><h1>{tab === 'overview' ? `Olá, ${session.user.name.split(' ')[0]}.` : nav.find(item => item[0] === tab)?.[1]}</h1>
-      <p>{tab === 'overview' ? 'Acompanhe as aplicações vinculadas ao seu Discord.' : app ? `${app.label} · ${app.id}` : 'Nenhuma aplicação vinculada.'}</p></div>
+      <div className="portal-header-trail">Painel <span>/</span> {nav.find(item => item[0] === tab)?.[1]}</div><div className="portal-header-right"><span className="portal-live-dot"/> Discord conectado {session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span className="portal-header-initial">{session.user.name.slice(0,1)}</span>}</div></header>
+    <main className="portal-content"><div className="portal-heading"><h1>{tab === 'overview' ? `Olá, ${session.user.name.split(' ')[0]}.` : nav.find(item => item[0] === tab)?.[1]}</h1>
+      <p>{tab === 'overview' ? 'Gerencie suas aplicações vinculadas ao Discord.' : app ? `${app.label} · ${app.id}` : 'Nenhuma aplicação vinculada.'}</p></div>
       {error && <div className="portal-alert error" role="alert">{error}<button onClick={() => setError('')} aria-label="Fechar aviso">×</button></div>}
       {flash && <div className="portal-alert" role="status">{flash}<button onClick={() => setFlash('')} aria-label="Fechar aviso">×</button></div>}
-      {tab === 'overview' && <><div className="portal-stats"><div><span>APLICAÇÕES VINCULADAS</span><strong>{count}</strong><small>Identificadas pelo Discord</small></div><div><span>VERIFICAÇÕES</span><strong>{config?.verified ?? '—'}</strong><small>{app ? `Na aplicação ${app.label}` : 'Escolha uma aplicação'}</small></div><div><span>STATUS DO CLOUD</span><strong className="portal-stat-status">{config ? config.secretConfigured ? 'Configurado' : 'Pendente' : '—'}</strong><small>{config?.secretConfigured ? 'OAuth2 cadastrado' : 'Confira a autenticação'}</small></div></div>
-        <Section eyebrow="SUAS APLICAÇÕES" title="Gerencie em um só lugar" description="Somente bots cujo proprietário foi vinculado a este Discord aparecem aqui." action={<button className="portal-outline" onClick={() => setTab('apps')}>Ver aplicações →</button>}>
-          {count ? <div className="portal-app-grid">{session.apps.map(item => <button key={item.id} onClick={() => { setAppId(item.id); setTab('cloud'); }}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><strong>{item.label}</strong><small>ID {item.id}</small><span className="portal-arrow">↗</span></button>)}</div> : <Empty title="Nenhuma aplicação vinculada" text="Configure o proprietário em /painel → ValtrexCloud no seu bot e entre novamente."/>}</Section></>}
+      {tab === 'overview' && <><div className="portal-stats"><button onClick={() => setTab('apps')}><span className="portal-stat-icon"><Icon name="apps" size={23}/></span><span className="portal-stat-copy"><span>Aplicações vinculadas</span><strong>{count}</strong><small>Na sua conta Discord</small></span><span className="portal-stat-arrow">→</span></button><button onClick={() => setTab('logs')}><span className="portal-stat-icon"><Icon name="cloud" size={23}/></span><span className="portal-stat-copy"><span>Verificações</span><strong>{config?.verified ?? '—'}</strong><small>{app ? `Em ${app.label}` : 'Selecione uma aplicação'}</small></span><span className="portal-stat-arrow">→</span></button><button onClick={() => setTab('cloud')}><span className="portal-stat-icon"><Icon name="cloud" size={23}/></span><span className="portal-stat-copy"><span>Status do Cloud</span><strong className="portal-stat-status">{config ? config.secretConfigured ? 'Configurado' : 'Pendente' : '—'}</strong><small>{config?.secretConfigured ? 'OAuth2 cadastrado' : 'Confira a autenticação'}</small></span><span className="portal-stat-arrow">→</span></button></div>
+        <Section eyebrow="SUAS APLICAÇÕES" title="Suas aplicações" description="Todas as aplicações vinculadas à sua conta Discord." action={<button className="portal-outline" onClick={refreshApps}>Atualizar lista ↻</button>}>
+          {count ? <div className="portal-app-grid">{visibleApps.map(item => <button key={`${item.source}:${item.id}`} onClick={() => openApp(item)}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span className="portal-app-info"><strong>{item.label}</strong><small>{appProfile[item.profile]} · {item.id}</small><span>{item.source === 'manager' ? appStatus[item.status] || appStatus.unknown : 'ValtrexCloud vinculado'}</span></span><span className="portal-arrow">{item.cloudId ? 'Gerenciar' : 'Detalhes'} →</span></button>)}</div> : <Empty title="Nenhuma aplicação vinculada" text="Abra /painel → ValtrexCloud no seu bot e vincule sua conta Discord como proprietária. Depois atualize a lista."/>}</Section></>}
       {tab === 'apps' && <Section eyebrow="APLICAÇÕES" title="Seus bots" description="Dados do Cloud compartilhado, vinculados à identidade autorizada no Discord.">
-        {count ? <div className="portal-list">{session.apps.map(item => <button key={item.id} onClick={() => { setAppId(item.id); setTab('cloud'); }}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span><strong>{item.label}</strong><small>Aplicação {item.id}</small></span><span className="portal-list-end">Gerenciar ↗</span></button>)}</div> : <Empty title="Sem aplicações" text="A vinculação depende do proprietário salvo no ValtrexCloud de cada bot."/>}</Section>}
+        {count ? <><div className="portal-list">{visibleApps.map(item => <button key={`${item.source}:${item.id}`} onClick={() => openApp(item)}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span><strong>{item.label}</strong><small>{appProfile[item.profile]} · {item.source === 'manager' ? appStatus[item.status] || appStatus.unknown : 'Cloud vinculado'}</small></span><span className="portal-list-end">{item.cloudId ? 'Gerenciar Cloud' : 'Detalhes'} ↗</span></button>)}</div>
+          {selectedManaged && !selectedManaged.cloudId && <div className="portal-managed-detail"><h3>{selectedManaged.label}</h3><dl><div><dt>Aplicação</dt><dd>{selectedManaged.id}</dd></div><div><dt>Produto</dt><dd>{appProfile[selectedManaged.profile]}</dd></div><div><dt>Plano</dt><dd>{appStatus[selectedManaged.status] || appStatus.unknown}</dd></div><div><dt>Vencimento</dt><dd>{selectedManaged.expiresAt ? new Date(selectedManaged.expiresAt).toLocaleString('pt-BR') : 'Não informado'}</dd></div></dl><p>Para renovar o plano ou configurar o bot, use o servidor oficial no Discord. O ValtrexCloud aparece aqui quando for vinculado no /painel do bot.</p></div>}</> : <Empty title="Sem aplicações" text="A vinculação depende do proprietário salvo no Manager ou no ValtrexCloud de cada bot."/>}</Section>}
       {tab === 'cloud' && <Section eyebrow="VALTREXCLOUD" title="Autenticação Discord" description="O Client Secret permanece somente no backend. O formulário nunca mostra o valor salvo.">
         {config ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ label: config.label, clientId: config.clientId || appId,
           clientSecret: secret || undefined, guildId: config.guildId || null, backupGuildId: config.backupGuildId || null,

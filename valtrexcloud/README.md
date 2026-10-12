@@ -10,6 +10,25 @@ Páginas móveis de verificação e recuperação consentida pelo OAuth2 oficial
 
 Nenhum processo Discord permanente roda na Vercel. Tokens OAuth de membros que consentiram com `guilds.join` são cifrados no backend e retidos por até 90 dias. O Client Secret também fica cifrado e não retorna nas respostas da API. A chave de cada bot fica no seu armazenamento local restrito ou no ambiente do bot.
 
+## Login único do portal
+
+O botão **Continuar com Discord** em `/dashboard` usa o Client ID público
+`1506929376967790752` da aplicação ValtrexApplications. O proprietário deve
+cadastrar exatamente `https://valtrexapplications.vercel.app/api/auth/discord/callback`
+em Discord Developer Portal → OAuth2 → Redirects e salvar o Client Secret em
+Supabase → projeto `zx-sparkle-cart` → Edge Functions → Secrets, com o nome
+`VALTREX_PORTAL_CLIENT_SECRET`. O valor nunca deve ser enviado em chat, GitHub,
+Vercel ou frontend. `VALTREX_PORTAL_CLIENT_ID` é opcional se a aplicação mudar.
+O login pede somente o scope `identify`; o backend filtra cada aplicação pelo
+ID Discord autenticado. A entrada antiga por ID de bot permanece numa seção
+recolhida para compatibilidade enquanto o secret da plataforma é configurado.
+
+O Manager envia um catálogo sem tokens ou arquivos de clientes a cada dois
+minutos para `/api/manager/sync`, autenticado pelo token do próprio bot e
+validado pela API oficial do Discord. A troca no banco é atômica para remover
+vínculos antigos em mudanças de proprietário. Bots com Cloud configurado podem
+ser gerenciados no painel; os demais mostram plano e tipo de aplicação.
+
 ## Configuração por aplicação
 
 1. Inicie o bot atualizado. Ele registra sua própria aplicação na ponte usando o token de bot já configurado, validado pela API oficial do Discord. A chave de integração é individual e é salva em arquivo local com permissão restrita. `VALTREX_CLOUD_API_KEY` é opcional para instalações com provisionamento próprio.

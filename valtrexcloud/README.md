@@ -17,11 +17,12 @@ O botão **Continuar com Discord** em `/dashboard` usa o Client ID público
 cadastrar exatamente `https://valtrexapplications.vercel.app/api/auth/discord/callback`
 em Discord Developer Portal → OAuth2 → Redirects e salvar o Client Secret em
 Supabase → projeto `zx-sparkle-cart` → Edge Functions → Secrets, com o nome
-`VALTREX_PORTAL_CLIENT_SECRET`. O valor nunca deve ser enviado em chat, GitHub,
-Vercel ou frontend. `VALTREX_PORTAL_CLIENT_ID` é opcional se a aplicação mudar.
+`VALTREX_PORTAL_CLIENT_SECRET`, ou na configuração cifrada da aplicação Manager
+via API administrativa autenticada. O backend nunca devolve o valor salvo.
+`VALTREX_PORTAL_CLIENT_ID` é opcional se a aplicação mudar.
 O login pede somente o scope `identify`; o backend filtra cada aplicação pelo
 ID Discord autenticado. A entrada antiga por ID de bot permanece numa seção
-recolhida para compatibilidade enquanto o secret da plataforma é configurado.
+recolhida para compatibilidade com links anteriores.
 
 O Manager envia um catálogo sem tokens ou arquivos de clientes a cada dois
 minutos para `/api/manager/sync`, autenticado pelo token do próprio bot e

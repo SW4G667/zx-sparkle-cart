@@ -320,7 +320,10 @@ async function callback(req: Request, url: URL) {
     await log(tenant.id, 'gift_login_completed', { gift_id: gift.id });
     return redirect(`/g/${await open(gift.token_cipher)}/setup`,
       `vtx_gift=${session}; Path=/api; Max-Age=3600; HttpOnly; Secure; SameSite=Lax`);
-  } catch { await log(tenant.id, 'oauth_failed'); return redirect('/result?status=temporary', clear); }
+  } catch {
+    if (tenant?.id) await log(tenant.id, 'oauth_failed');
+    return redirect('/result?status=temporary', clear);
+  }
 }
 
 async function giftSession(req: Request, token: string) {

@@ -581,12 +581,75 @@ async function managerSync(req: Request) {
     return json({ error: 'IDs duplicados.' }, 400);
   const { data: synced, error } = await db.rpc('valtrex_replace_managed_apps', { p_apps: rows });
   if (error) return json({ error: 'Não foi possível sincronizar aplicações.' }, 503);
+  const catalog = input.catalog;
+  if (catalog && typeof catalog === 'object') {
+    const invite = String(catalog.officialInvite || '');
+    const validInvite = !invite || /^https:\/\/(?:discord\.gg\/[A-Za-z0-9-]+|(?:www\.)?discord\.com\/invite\/[A-Za-z0-9-]+)\/?$/.test(invite);
+    const plans = catalog.plans;
+    if (!validInvite || !Array.isArray(plans) || plans.length > 2 || plans.some((plan: any) =>
+      !['sales', 'robux'].includes(plan?.profile) || typeof plan?.name !== 'string' || plan.name.length > 90 ||
+      typeof plan?.description !== 'string' || plan.description.length > 1000 ||
+      !Array.isArray(plan?.options) || plan.options.length > 25 || plan.options.some((option: any) =>
+        typeof option?.label !== 'string' || option.label.length > 80 ||
+        !Number.isInteger(option?.days) || option.days < 1 || option.days > 3650 ||
+        !Number.isFinite(option?.price) || option.price <= 0 || option.price > 1_000_000)))
+      return json({ error: 'Catálogo público inválido.' }, 400);
+    const { error: catalogError } = await db.from('valtrex_public_catalog').upsert({ id: 1,
+      official_invite: invite || null, plans, updated_at: new Date().toISOString() });
+    if (catalogError) return json({ error: 'Aplicações sincronizadas; catálogo indisponível.' }, 503);
+  }
   return json({ synced });
+}
+
+async function publicCatalog() {
+  const { data, error } = await db.from('valtrex_public_catalog').select('official_invite,plans,updated_at').eq('id', 1).maybeSingle();
+  if (error) return json({ error: 'Catálogo temporariamente indisponível.' }, 503);
+  return json({ officialInvite: data?.official_invite || null, plans: data?.plans || [], updatedAt: data?.updated_at || null }, 200,
+    { 'cache-control': 'public, max-age=120' });
 }
 
 async function bot(req: Request, path: string) {
   const tenant = await tenantAuth(req);
   if (!tenant) return json({ error: 'Acesso negado.' }, 401);
+  const eligibilityId = path.match(/^eligibility\/(\d{15,22})$/)?.[1];
+  if (eligibilityId && req.method === 'GET') {
+    if (!(await limit(req, 'generator_eligibility', 120))) return json({ error: 'Aguarde para verificar novamente.' }, 429);
+    const { data: consent } = await db.from('valtrex_consents').select('*').eq('tenant_id', tenant.id)
+      .eq('discord_user_id', eligibilityId).is('revoked_at', null)
+      .gt('retention_until', new Date().toISOString()).maybeSingle();
+    if (!consent) return json({ eligible: false });
+    try {
+      let access = await open(consent.access_cipher);
+      let response = await fetch('https://discord.com/api/v10/users/@me', {
+        headers: { authorization: `Bearer ${access}` }, signal: AbortSignal.timeout(8000) });
+      if (response.status === 401 || Date.parse(consent.expires_at || '') < Date.now()) {
+        const refreshed = await fetch('https://discord.com/api/v10/oauth2/token', { method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(8000),
+          body: new URLSearchParams({ client_id: tenant.client_id, client_secret: await open(tenant.client_secret_cipher),
+            grant_type: 'refresh_token', refresh_token: await open(consent.refresh_cipher) }) });
+        if (refreshed.status >= 500) return json({ error: 'Discord indisponível.' }, 503);
+        if (!refreshed.ok) {
+          await db.from('valtrex_consents').update({ revoked_at: new Date().toISOString() }).eq('tenant_id', tenant.id).eq('discord_user_id', eligibilityId);
+          return json({ eligible: false });
+        }
+        const fresh = await refreshed.json();
+        if (!fresh.access_token || !fresh.refresh_token) return json({ eligible: false });
+        access = fresh.access_token;
+        await db.from('valtrex_consents').update({ access_cipher: await seal(access), refresh_cipher: await seal(fresh.refresh_token),
+          expires_at: new Date(Date.now() + Number(fresh.expires_in || 0) * 1000).toISOString() })
+          .eq('tenant_id', tenant.id).eq('discord_user_id', eligibilityId);
+        response = await fetch('https://discord.com/api/v10/users/@me', {
+          headers: { authorization: `Bearer ${access}` }, signal: AbortSignal.timeout(8000) });
+      }
+      if (response.status === 401) {
+        await db.from('valtrex_consents').update({ revoked_at: new Date().toISOString() }).eq('tenant_id', tenant.id).eq('discord_user_id', eligibilityId);
+        return json({ eligible: false });
+      }
+      if (!response.ok) return json({ error: 'Discord indisponível.' }, 503);
+      const identity = await response.json();
+      return json({ eligible: identity.id === eligibilityId });
+    } catch { return json({ error: 'Não foi possível conferir a autorização.' }, 503); }
+  }
   if (path === 'heartbeat' && req.method === 'POST') {
     const input = await body(req);
     if (!Array.isArray(input.guildIds) || input.guildIds.length > 500 || !input.guildIds.every(validId))
@@ -675,6 +738,7 @@ Deno.serve(async req => {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/valtrex-cloud\/?/, '').replace(/^\/+/, '');
     if (path === 'health') return json({ service: 'ValtrexCloud', status: 'ready', redirectUri: CALLBACK });
+    if (path === 'public/catalog' && req.method === 'GET') return await publicCatalog();
     if (path === 'bootstrap' && req.method === 'POST') return await bootstrap(req);
     const gift = path.match(/^g\/([A-Za-z0-9_-]+)$/);
     if (gift && req.method === 'GET') return await publicGift(gift[1]);

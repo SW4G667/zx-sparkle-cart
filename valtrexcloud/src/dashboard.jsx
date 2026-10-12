@@ -42,6 +42,7 @@ function Login() {
       <h1>Tudo o que é seu,<br/>em um <em>só lugar.</em></h1>
       <p>Entre com sua conta Discord para acessar todas as aplicações Valtrex vinculadas a você.</p>
       <a className="portal-login-button" href="/api/auth/portal"><DiscordMark/>Continuar com Discord <span aria-hidden="true">→</span></a>
+      <a className="portal-plans-link" href="/plans">Conhecer bots e planos ↗</a>
       <div className="portal-login-reassurance"><Icon name="cloud" size={18}/> Autenticação oficial do Discord. Seus dados ficam protegidos.</div>
     </div><div className="portal-login-compat"><details><summary>Usar acesso de uma aplicação já configurada</summary>
       <label htmlFor="portal-app-id">ID da aplicação</label>
@@ -169,6 +170,7 @@ export default function Dashboard() {
       {session.apps?.map(item => <option key={item.id} value={item.id}>{item.label} · {item.id.slice(-4)}</option>)}</select></div>
     <nav aria-label="Navegação do painel">{nav.map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''}
       onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><Icon name={key}/>{label}</button>)}</nav>
+    <a className="portal-sidebar-plans" href="/plans">◇ &nbsp; Planos e aplicações ↗</a>
     <div className="portal-sidebar-bottom"><div className="portal-user">{session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span>{session.user.name.slice(0, 1).toUpperCase()}</span>}
       <div><strong>{session.user.name}</strong><small>Discord conectado</small></div></div><button onClick={logout}>Sair da conta ↗</button></div>
   </aside><div className="portal-main"><header className="portal-header"><button className="portal-menu" aria-label="Abrir menu" onClick={() => setMenuOpen(!menuOpen)}>☰</button>

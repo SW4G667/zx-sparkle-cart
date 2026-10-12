@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /g/
+Disallow: /v/
+Disallow: /preview/
+Disallow: /result
+Sitemap: https://valtrexapplications.vercel.app/sitemap.xml

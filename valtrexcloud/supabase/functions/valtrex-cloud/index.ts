@@ -179,16 +179,16 @@ async function preview(id: string, expires: string, signature: string) {
   return json({ status: 'preview', store: data.label, theme: cleanTheme(data.theme) });
 }
 
-async function start(req: Request, token: string, flow: 'backup' | 'verify' = 'backup') {
+async function start(req: Request, token: string, flow: 'backup' | 'verify' | 'portal' = 'backup') {
   if (!(await limit(req, 'auth', 12))) return errorPage('busy');
   const gift = flow === 'backup' ? await giftByToken(token) : null;
   const actualFlow = flow === 'backup' && gift?.kind !== 'backup' ? 'legacy_gift' : flow;
   if (flow === 'backup' && !(actualFlow === 'backup' ? ['active', 'full'] : ['active']).includes(giftState(gift))) return errorPage(giftState(gift));
-  if (flow === 'verify' && !validId(token)) return errorPage('invalid');
+  if (flow !== 'backup' && !validId(token)) return errorPage('invalid');
   const { data: tenant } = await db.from('valtrex_tenants').select('id,client_id,client_secret_cipher,guild_id,owner_user_id')
     .eq('id', flow === 'backup' ? gift.tenant_id : token).maybeSingle();
   if (!tenant?.client_id || !tenant.client_secret_cipher || (flow === 'verify' && !tenant.guild_id) ||
-      (actualFlow === 'backup' && !tenant.owner_user_id)) return errorPage('incomplete');
+      (['backup', 'portal'].includes(actualFlow) && !tenant.owner_user_id)) return errorPage('incomplete');
   const state = randomToken(); const verifier = randomToken();
   const { error } = await db.from('valtrex_oauth_states').insert({ state_hash: await sha(state), verifier_hash: await sha(verifier),
     gift_id: gift?.id || null, tenant_id: tenant.id, flow: actualFlow, expires_at: new Date(Date.now() + 10 * 60_000).toISOString() });
@@ -214,7 +214,7 @@ async function callback(req: Request, url: URL) {
   const row = states[0];
   const { data: tenant } = await db.from('valtrex_tenants').select('*').eq('id', row.tenant_id).maybeSingle();
   const { data: gift } = ['backup', 'legacy_gift', 'gift'].includes(row.flow) ? await db.from('valtrex_gifts').select('*').eq('id', row.gift_id).eq('tenant_id', row.tenant_id).maybeSingle() : { data: null };
-  if (!tenant?.client_id || !tenant.client_secret_cipher || (row.flow !== 'verify' && !gift)) return redirect('/result?status=incomplete', clear);
+  if (!tenant?.client_id || !tenant.client_secret_cipher || (!['verify', 'portal'].includes(row.flow) && !gift)) return redirect('/result?status=incomplete', clear);
   // A função atômica confere limite e idempotência; uma pessoa já verificada
   // pode concluir o callback mesmo que o último uso tenha preenchido o Gift.
   if (gift && ['invalid', 'expired'].includes(giftState(gift))) return redirect(`/result?status=${giftState(gift)}`, clear);
@@ -231,6 +231,21 @@ async function callback(req: Request, url: URL) {
     if (!identity.ok) return redirect('/result?status=oauth', clear);
     const user = await identity.json();
     if (!validId(user.id)) return redirect('/result?status=oauth', clear);
+    if (row.flow === 'portal') {
+      if (user.id !== tenant.owner_user_id) return redirect('/result?status=forbidden', clear);
+      const session = randomToken() + randomToken();
+      const csrf = randomToken();
+      await db.from('valtrex_portal_sessions').delete().lt('expires_at', new Date().toISOString());
+      const { error: sessionError } = await db.from('valtrex_portal_sessions').insert({
+        session_hash: await sha(session), login_tenant_id: tenant.id, discord_user_id: user.id,
+        username: String(user.global_name || user.username || 'Usuário').slice(0, 80),
+        avatar_hash: typeof user.avatar === 'string' ? user.avatar.slice(0, 100) : null,
+        csrf_cipher: await seal(csrf), expires_at: new Date(Date.now() + 12 * 60 * 60_000).toISOString(),
+      });
+      if (sessionError) return redirect('/result?status=temporary', clear);
+      await log(tenant.id, 'portal_login', { user_id: user.id });
+      return redirect('/dashboard', `vtx_portal=${session}; Path=/api; Max-Age=43200; HttpOnly; Secure; SameSite=Lax`);
+    }
     if (row.flow === 'verify') {
       if (!tokenData.scope?.split(' ').includes('guilds.join') || !tokenData.refresh_token) return redirect('/result?status=oauth', clear);
       const { error: consentError } = await db.from('valtrex_consents').upsert({ tenant_id: tenant.id, discord_user_id: user.id,
@@ -336,9 +351,9 @@ async function giftSetup(req: Request, token: string, action: string) {
   return json({ error: 'Rota não encontrada.' }, 404);
 }
 
-async function admin(req: Request, path: string) {
+async function admin(req: Request, path: string, authenticatedTenant: any = null) {
   if (!(await limit(req, 'admin', 80))) return json({ error: 'Muitas solicitações.' }, 429);
-  const tenant = await tenantAuth(req);
+  const tenant = authenticatedTenant || await tenantAuth(req);
   if (!tenant) return json({ error: 'Acesso negado.' }, 401);
   if (path === 'preview' && req.method === 'POST') {
     const expires = String(Date.now() + 15 * 60_000);
@@ -447,6 +462,47 @@ async function admin(req: Request, path: string) {
   return json({ error: 'Rota não encontrada.' }, 404);
 }
 
+async function portalSession(req: Request) {
+  const value = cookieValue(req, 'vtx_portal');
+  if (!/^[A-Za-z0-9_-]{80,200}$/.test(value)) return null;
+  const { data } = await db.from('valtrex_portal_sessions').select('*')
+    .eq('session_hash', await sha(value)).gt('expires_at', new Date().toISOString()).maybeSingle();
+  if (!data) return null;
+  const { data: loginTenant } = await db.from('valtrex_tenants').select('owner_user_id')
+    .eq('id', data.login_tenant_id).maybeSingle();
+  return loginTenant?.owner_user_id === data.discord_user_id ? data : null;
+}
+
+async function portal(req: Request, path: string) {
+  if (!(await limit(req, 'portal', 90))) return json({ error: 'Aguarde antes de tentar novamente.' }, 429);
+  const session = await portalSession(req);
+  if (!session) return json({ error: 'Entre novamente com Discord.' }, 401);
+  if (req.method !== 'GET') {
+    if (req.headers.get('origin') !== BASE || !req.headers.get('content-type')?.startsWith('application/json') ||
+        !equal(req.headers.get('x-valtrex-csrf') || '', await open(session.csrf_cipher)))
+      return json({ error: 'Solicitação não autorizada.' }, 403);
+  }
+  if (path === 'me' && req.method === 'GET') {
+    const { data: apps, error } = await db.from('valtrex_tenants')
+      .select('id,label,client_id,guild_id,role_id,bot_seen_at,created_at')
+      .eq('owner_user_id', session.discord_user_id).order('created_at', { ascending: false });
+    if (error) return json({ error: 'Não foi possível carregar suas aplicações.' }, 503);
+    return json({ user: { id: session.discord_user_id, name: session.username,
+      avatar: session.avatar_hash ? `https://cdn.discordapp.com/avatars/${session.discord_user_id}/${session.avatar_hash}.png?size=128` : '' },
+      apps: apps || [], csrf: await open(session.csrf_cipher), loginTenantId: session.login_tenant_id });
+  }
+  if (path === 'logout' && req.method === 'POST') {
+    await db.from('valtrex_portal_sessions').delete().eq('session_hash', session.session_hash);
+    return json({ ok: true }, 200, { 'set-cookie': 'vtx_portal=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Lax' });
+  }
+  const match = path.match(/^apps\/(\d{15,22})\/(config|preview|theme\/reset|gifts(?:\/[0-9a-f-]{36})?|logs)$/);
+  if (!match) return json({ error: 'Rota não encontrada.' }, 404);
+  const { data: tenant } = await db.from('valtrex_tenants').select('*').eq('id', match[1])
+    .eq('owner_user_id', session.discord_user_id).maybeSingle();
+  if (!tenant) return json({ error: 'Aplicação não encontrada.' }, 404);
+  return admin(req, match[2], tenant);
+}
+
 async function bot(req: Request, path: string) {
   const tenant = await tenantAuth(req);
   if (!tenant) return json({ error: 'Acesso negado.' }, 401);
@@ -551,7 +607,10 @@ Deno.serve(async req => {
     if (auth && req.method === 'GET') return await start(req, auth[1], 'backup');
     const verifyAuth = path.match(/^auth\/verify\/(\d{15,22})$/);
     if (verifyAuth && req.method === 'GET') return await start(req, verifyAuth[1], 'verify');
+    const portalAuth = path.match(/^auth\/portal\/(\d{15,22})$/);
+    if (portalAuth && req.method === 'GET') return await start(req, portalAuth[1], 'portal');
     if (path === 'auth/discord/callback' && req.method === 'GET') return await callback(req, url);
+    if (path.startsWith('portal/')) return await portal(req, path.slice(7));
     if (path.startsWith('admin/')) return await admin(req, path.slice(6));
     if (path.startsWith('bot/')) return await bot(req, path.slice(4));
     return json({ error: 'Rota não encontrada.' }, 404);

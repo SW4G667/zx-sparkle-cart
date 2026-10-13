@@ -44,8 +44,9 @@ const names = ['Xvfb', 'Xorg', 'openbox', 'tint2', 'xterm', 'x11vnc', 'Xtigervnc
 const executables = Object.fromEntries(names.map(name => [name, which(name)]));
 const disk = fs.statfsSync('.');
 const dri = (() => { try { return fs.readdirSync('/dev/dri').sort(); } catch { return []; } })();
-const port = ['SERVER_PORT', 'PORT'].map(name => process.env[name])
-  .find(value => /^\d+$/.test(value || ''));
+const ports = Object.fromEntries(['SERVER_PORT', 'PORT']
+  .filter(name => /^\d+$/.test(process.env[name] || ''))
+  .map(name => [name, Number(process.env[name])]));
 console.log(JSON.stringify({
   diagnostic_schema: 2,
   runtime: { node: process.version, python: version('python3'), kernel: os.release(),
@@ -64,6 +65,6 @@ console.log(JSON.stringify({
   container: { uid: process.getuid?.() ?? null, docker_marker: fs.existsSync('/.dockerenv'),
     seccomp_mode: status('Seccomp'), no_new_privileges: status('NoNewPrivs') },
   graphics: { dri_devices: dri }, executables,
-  network: { configured_port: port ? Number(port) : null,
+  network: { configured_ports: ports,
     note: 'Porta configurada não comprova publicação HTTPS ou acesso externo.' },
-}, null, 2));
+}));

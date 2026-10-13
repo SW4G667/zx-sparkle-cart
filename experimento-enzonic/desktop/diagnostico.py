@@ -73,8 +73,8 @@ def main():
     memory = limit("/sys/fs/cgroup/memory.max")
     if memory is None:
         memory = limit("/sys/fs/cgroup/memory/memory.limit_in_bytes")
-    port = next((int(os.environ[name]) for name in ("SERVER_PORT", "PORT")
-                 if os.environ.get(name, "").isdigit()), None)
+    ports = {name: int(os.environ[name]) for name in ("SERVER_PORT", "PORT")
+             if os.environ.get(name, "").isdigit()}
     data = {
         "diagnostic_schema": 2,
         "runtime": {
@@ -111,11 +111,11 @@ def main():
         },
         "executables": {name: bool(shutil.which(name)) for name in TOOLS},
         "network": {
-            "configured_port": port,
+            "configured_ports": ports,
             "note": "Porta configurada não comprova publicação HTTPS ou acesso externo.",
         },
     }
-    print(json.dumps(data, indent=2, ensure_ascii=False))
+    print(json.dumps(data, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":

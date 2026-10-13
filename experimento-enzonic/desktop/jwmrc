@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<JWM>
+  <RootMenu onroot="12">
+    <Program label="Terminal">xterm</Program>
+  </RootMenu>
+  <Desktops width="1" height="1">
+    <Background type="solid">#17243b</Background>
+  </Desktops>
+  <Tray x="0" y="-1" height="44" autohide="false">
+    <TrayButton label="Aplicativos">root:1</TrayButton>
+    <TaskList/>
+    <Clock format="%H:%M"/>
+  </Tray>
+</JWM>

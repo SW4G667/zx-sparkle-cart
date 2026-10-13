@@ -240,10 +240,22 @@ async function callback(req: Request, url: URL) {
   const code = url.searchParams.get('code') || '';
   const state = url.searchParams.get('state') || '';
   const verifier = cookieValue(req, 'vtx_oauth');
-  if (!code || !/^[A-Za-z0-9_-]{40,100}$/.test(state) || !verifier) return redirect('/result?status=invalid', clear);
-  const { data: states, error: stateError } = await db.rpc('valtrex_take_oauth_state_v2', { p_state_hash: await sha(state), p_verifier_hash: await sha(verifier) });
-  if (stateError || !states?.length) return redirect('/result?status=invalid', clear);
-  const row = states[0];
+  if (!code || !/^[A-Za-z0-9_-]{40,100}$/.test(state)) return redirect('/result?status=invalid', clear);
+  const stateHash = await sha(state);
+  // O Gerador entrega a URL do Discord diretamente. Seu state é vinculado ao
+  // ID do usuário no banco, pois o navegador ainda não visitou nosso domínio
+  // e não possui o cookie das outras modalidades OAuth.
+  const { data: directState } = await db.from('valtrex_oauth_states').select('tenant_id,flow')
+    .eq('state_hash', stateHash).eq('flow', 'verify_direct').is('used_at', null)
+    .gt('expires_at', new Date().toISOString()).maybeSingle();
+  let row = directState;
+  if (!row) {
+    if (!verifier) return redirect('/result?status=invalid', clear);
+    const { data: states, error: stateError } = await db.rpc('valtrex_take_oauth_state_v2',
+      { p_state_hash: stateHash, p_verifier_hash: await sha(verifier) });
+    if (stateError || !states?.length) return redirect('/result?status=invalid', clear);
+    row = states[0];
+  }
   const { data: tenant } = row.flow === 'portal_global' ? { data: null } :
     await db.from('valtrex_tenants').select('*').eq('id', row.tenant_id).maybeSingle();
   const { data: gift } = ['backup', 'legacy_gift', 'gift'].includes(row.flow) ? await db.from('valtrex_gifts').select('*').eq('id', row.gift_id).eq('tenant_id', row.tenant_id).maybeSingle() : { data: null };
@@ -251,7 +263,7 @@ async function callback(req: Request, url: URL) {
   const clientId = globalPortal ? PORTAL_CLIENT_ID : tenant?.client_id || '';
   const { data: portalApp } = globalPortal ? await db.from('valtrex_tenants').select('client_secret_cipher').eq('id', clientId).maybeSingle() : { data: null };
   if (globalPortal ? (!validId(clientId) || !(Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET') || portalApp?.client_secret_cipher)) :
-      (!tenant?.client_id || !tenant.client_secret_cipher || (!['verify', 'portal'].includes(row.flow) && !gift)))
+      (!tenant?.client_id || !tenant.client_secret_cipher || (!['verify', 'verify_direct', 'portal'].includes(row.flow) && !gift)))
     return redirect('/result?status=incomplete', clear);
   // A função atômica confere limite e idempotência; uma pessoa já verificada
   // pode concluir o callback mesmo que o último uso tenha preenchido o Gift.
@@ -269,6 +281,14 @@ async function callback(req: Request, url: URL) {
     if (!identity.ok) return redirect('/result?status=oauth', clear);
     const user = await identity.json();
     if (!validId(user.id)) return redirect('/result?status=oauth', clear);
+    if (row.flow === 'verify_direct') {
+      // A função consome o state uma só vez e exige que o Discord tenha
+      // autenticado exatamente a pessoa que pediu o produto no bot.
+      const { data: claimed, error: claimError } = await db.rpc('valtrex_take_oauth_state_v2',
+        { p_state_hash: stateHash, p_verifier_hash: await sha(user.id) });
+      if (claimError || !claimed?.length || claimed[0].tenant_id !== tenant.id || claimed[0].flow !== 'verify_direct')
+        return redirect('/result?status=invalid', clear);
+    }
     if (row.flow === 'portal' || globalPortal) {
       if (!globalPortal && user.id !== tenant.owner_user_id) return redirect('/result?status=forbidden', clear);
       const session = randomToken() + randomToken();
@@ -284,7 +304,7 @@ async function callback(req: Request, url: URL) {
       if (tenant) await log(tenant.id, 'portal_login', { user_id: user.id });
       return redirect('/dashboard', `vtx_portal=${session}; Path=/api; Max-Age=43200; HttpOnly; Secure; SameSite=Lax`);
     }
-    if (row.flow === 'verify') {
+    if (row.flow === 'verify' || row.flow === 'verify_direct') {
       if (!tokenData.scope?.split(' ').includes('guilds.join') || !tokenData.refresh_token) return redirect('/result?status=oauth', clear);
       const { error: consentError } = await db.from('valtrex_consents').upsert({ tenant_id: tenant.id, discord_user_id: user.id,
         access_cipher: await seal(tokenData.access_token), refresh_cipher: await seal(tokenData.refresh_token),
@@ -611,6 +631,24 @@ async function publicCatalog() {
 async function bot(req: Request, path: string) {
   const tenant = await tenantAuth(req);
   if (!tenant) return json({ error: 'Acesso negado.' }, 401);
+  if (path === 'oauth-link' && req.method === 'POST') {
+    if (!(await limit(req, 'generator_oauth_link', 120))) return json({ error: 'Aguarde para criar outro link.' }, 429);
+    const input = await body(req);
+    if (!validId(input.userId)) return json({ error: 'Usuário inválido.' }, 400);
+    if (!tenant.client_id || !tenant.client_secret_cipher || !tenant.guild_id)
+      return json({ error: 'Configure OAuth2 e o servidor principal em ValtrexCloud → Autenticação.' }, 409);
+    const state = randomToken();
+    const { error } = await db.from('valtrex_oauth_states').insert({
+      state_hash: await sha(state), verifier_hash: await sha(input.userId),
+      gift_id: null, tenant_id: tenant.id, flow: 'verify_direct',
+      expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+    });
+    if (error) return json({ error: 'Não foi possível iniciar a autorização.' }, 503);
+    const params = new URLSearchParams({ client_id: tenant.client_id, redirect_uri: CALLBACK,
+      response_type: 'code', scope: 'identify guilds.join', state, prompt: 'consent' });
+    return json({ url: `https://discord.com/oauth2/authorize?${params}`, expiresIn: 600 }, 200,
+      { 'cache-control': 'no-store' });
+  }
   const eligibilityId = path.match(/^eligibility\/(\d{15,22})$/)?.[1];
   if (eligibilityId && req.method === 'GET') {
     if (!(await limit(req, 'generator_eligibility', 120))) return json({ error: 'Aguarde para verificar novamente.' }, 429);

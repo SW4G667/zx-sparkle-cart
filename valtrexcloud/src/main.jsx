@@ -184,10 +184,13 @@ function SetupPage({ token }) {
 
 function StatusPage({ status = 'invalid' }) {
   const [title, description] = messages[status] || messages.temporary;
-  return <Shell><section className="card status-card" role="status" aria-live="polite">
-    <div className={`status-icon ${status === 'success' ? 'success' : ''}`}>{status === 'success' ? '✓' : <ShieldIcon/>}</div>
-    <span className="eyebrow">VALTREX CLOUD</span><h1>{title}</h1><p className="lead">{description}</p>
-    <a href="/" className="subtle-button">Voltar ao início <span aria-hidden="true">→</span></a>
+  const success = status === 'success';
+  return <Shell><section className={`card status-card verification-result${success ? ' verified' : ''}`} role="status" aria-live="polite">
+    <div className={`status-icon ${success ? 'success' : ''}`}>{success ? '✓' : <ShieldIcon/>}</div>
+    <span className="eyebrow">VALTREX CLOUD · DISCORD OAUTH2</span><h1>{title}</h1><p className="lead">{description}</p>
+    {success && <div className="verification-result-steps"><div><span>01</span><strong>Conta autorizada</strong><b>✓</b></div><div><span>02</span><strong>Verificação registrada</strong><b>✓</b></div><div><span>03</span><strong>Acesso concluído</strong><b>✓</b></div></div>}
+    <a href={success ? '/dashboard' : '/'} className="subtle-button">{success ? 'Abrir meu painel' : 'Voltar ao início'} <span aria-hidden="true">→</span></a>
+    <p className="verification-result-footnote">{success ? 'Você pode voltar ao Discord. O cargo configurado pode levar alguns instantes para aparecer.' : 'Confira a autorização no Discord e tente novamente se necessário.'}</p>
   </section></Shell>;
 }
 function PreviewPage({ parts }) {

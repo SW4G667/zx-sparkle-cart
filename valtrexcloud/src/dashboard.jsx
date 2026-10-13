@@ -5,13 +5,15 @@ import './dashboard-refresh.css';
 const apiRoot = '/api/portal';
 const nav = [
   ['overview', 'Visão geral', '◈'], ['apps', 'Aplicações', '▣'],
-  ['cloud', 'Autenticação', '◇'], ['gifts', 'Gifts', '✦'],
-  ['appearance', 'Aparência', '◐'], ['logs', 'Atividade', '☷'],
+  ['verification', 'Verificação', '◇'], ['cloud', 'Autenticação', '◇'], ['gifts', 'Gifts', '✦'],
+  ['appearance', 'Aparência', '◐'], ['subscriptions', 'Planos', '▣'], ['logs', 'Atividade', '☷'],
 ];
 const icons = {
   overview: <><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21v-8h6v8"/></>,
   apps: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
   cloud: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></>,
+  verification: <><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></>,
+  subscriptions: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 15h4"/></>,
   gifts: <><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M12 9v12M2 9h20M12 9c-4-1-5-6-2-6 2 0 2 3 2 6Zm0 0c4-1 5-6 2-6-2 0-2 3-2 6Z"/></>,
   appearance: <><circle cx="12" cy="12" r="9"/><circle cx="8" cy="9" r="1"/><circle cx="15" cy="8" r="1"/><circle cx="17" cy="13" r="1"/><path d="M12 21a3 3 0 0 1 0-6h1a2 2 0 0 0 0-4"/></>,
   logs: <><path d="M4 20V11M9 20V5M14 20v-8M19 20V3"/></>,
@@ -62,6 +64,14 @@ function Section({ eyebrow, title, description, children, action }) {
 }
 const appStatus = { active: 'Plano ativo', suspended: 'Acesso suspenso', expired: 'Plano vencido', unknown: 'Status não informado' };
 const appProfile = { sales: 'Valtrexsallers', robux: 'Valtrexbuxx', other: 'Aplicação' };
+function expiryLabel(value) {
+  if (!value) return 'Vencimento não informado';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Vencimento não informado';
+  const days = Math.ceil((date.getTime() - Date.now()) / 86400000);
+  if (days <= 0) return 'Plano vencido';
+  return days === 1 ? 'Vence amanhã' : `Vence em ${days} dias`;
+}
 function ownedApps(session) {
   const cloud = session?.apps || [];
   const managed = session?.managedApps || [];
@@ -93,8 +103,16 @@ export default function Dashboard() {
   const [giftForm, setGiftForm] = useState({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresDays: '', count: '1', banner: '' });
   const [menuOpen, setMenuOpen] = useState(false);
   const [managedDetail, setManagedDetail] = useState('');
+  const [catalog, setCatalog] = useState({ plans: [], officialInvite: null });
 
   useEffect(() => { request('/me').then(data => { setSession(data); setAppId(data.apps?.[0]?.id || ''); }).catch(err => { if (!/Entre novamente/.test(err.message)) setError(err.message); }).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/public/catalog', { signal: controller.signal }).then(response => response.ok ? response.json() : null)
+      .then(data => { if (data) setCatalog({ plans: data.plans || [], officialInvite: data.officialInvite || null }); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   useEffect(() => {
     if (!session || !appId) return;
     let cancelled = false;
@@ -106,6 +124,8 @@ export default function Dashboard() {
   }, [session, appId]);
   const app = session?.apps?.find(item => item.id === appId);
   const visibleApps = ownedApps(session);
+  const expiringApps = visibleApps.filter(item => item.source === 'manager' && item.expiresAt &&
+    new Date(item.expiresAt).getTime() - Date.now() <= 7 * 86400000);
   const selectedManaged = visibleApps.find(item => item.id === managedDetail);
   const openApp = item => { if (item.cloudId) { setAppId(item.cloudId); setTab('cloud'); } else { setManagedDetail(item.id); setTab('apps'); } setMenuOpen(false); };
   const call = (path, options = {}) => request(`/apps/${appId}${path}`, { ...options, csrf: session.csrf });
@@ -179,12 +199,18 @@ export default function Dashboard() {
       <p>{tab === 'overview' ? 'Gerencie suas aplicações vinculadas ao Discord.' : app ? `${app.label} · ${app.id}` : 'Nenhuma aplicação vinculada.'}</p></div>
       {error && <div className="portal-alert error" role="alert">{error}<button onClick={() => setError('')} aria-label="Fechar aviso">×</button></div>}
       {flash && <div className="portal-alert" role="status">{flash}<button onClick={() => setFlash('')} aria-label="Fechar aviso">×</button></div>}
+      {tab === 'overview' && expiringApps.length > 0 && <div className="portal-expiry-notice" role="status"><span>◷</span><div><strong>Confira seus planos</strong><p>{expiringApps.map(item => `${item.label}: ${expiryLabel(item.expiresAt)}`).join(' · ')}</p></div><button onClick={() => setTab('subscriptions')}>Ver detalhes →</button></div>}
       {tab === 'overview' && <><div className="portal-stats"><button onClick={() => setTab('apps')}><span className="portal-stat-icon"><Icon name="apps" size={23}/></span><span className="portal-stat-copy"><span>Aplicações vinculadas</span><strong>{count}</strong><small>Na sua conta Discord</small></span><span className="portal-stat-arrow">→</span></button><button onClick={() => setTab('logs')}><span className="portal-stat-icon"><Icon name="cloud" size={23}/></span><span className="portal-stat-copy"><span>Verificações</span><strong>{config?.verified ?? '—'}</strong><small>{app ? `Em ${app.label}` : 'Selecione uma aplicação'}</small></span><span className="portal-stat-arrow">→</span></button><button onClick={() => setTab('cloud')}><span className="portal-stat-icon"><Icon name="cloud" size={23}/></span><span className="portal-stat-copy"><span>Status do Cloud</span><strong className="portal-stat-status">{config ? config.secretConfigured ? 'Configurado' : 'Pendente' : '—'}</strong><small>{config?.secretConfigured ? 'OAuth2 cadastrado' : 'Confira a autenticação'}</small></span><span className="portal-stat-arrow">→</span></button></div>
         <Section eyebrow="SUAS APLICAÇÕES" title="Suas aplicações" description="Todas as aplicações vinculadas à sua conta Discord." action={<button className="portal-outline" onClick={refreshApps}>Atualizar lista ↻</button>}>
           {count ? <div className="portal-app-grid">{visibleApps.map(item => <button key={`${item.source}:${item.id}`} onClick={() => openApp(item)}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span className="portal-app-info"><strong>{item.label}</strong><small>{appProfile[item.profile]} · {item.id}</small><span>{item.source === 'manager' ? appStatus[item.status] || appStatus.unknown : 'ValtrexCloud vinculado'}</span></span><span className="portal-arrow">{item.cloudId ? 'Gerenciar' : 'Detalhes'} →</span></button>)}</div> : <Empty title="Nenhuma aplicação vinculada" text="Abra /painel → ValtrexCloud no seu bot e vincule sua conta Discord como proprietária. Depois atualize a lista."/>}</Section></>}
       {tab === 'apps' && <Section eyebrow="APLICAÇÕES" title="Seus bots" description="Dados do Cloud compartilhado, vinculados à identidade autorizada no Discord.">
         {count ? <><div className="portal-list">{visibleApps.map(item => <button key={`${item.source}:${item.id}`} onClick={() => openApp(item)}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span><strong>{item.label}</strong><small>{appProfile[item.profile]} · {item.source === 'manager' ? appStatus[item.status] || appStatus.unknown : 'Cloud vinculado'}</small></span><span className="portal-list-end">{item.cloudId ? 'Gerenciar Cloud' : 'Detalhes'} ↗</span></button>)}</div>
           {selectedManaged && !selectedManaged.cloudId && <div className="portal-managed-detail"><h3>{selectedManaged.label}</h3><dl><div><dt>Aplicação</dt><dd>{selectedManaged.id}</dd></div><div><dt>Produto</dt><dd>{appProfile[selectedManaged.profile]}</dd></div><div><dt>Plano</dt><dd>{appStatus[selectedManaged.status] || appStatus.unknown}</dd></div><div><dt>Vencimento</dt><dd>{selectedManaged.expiresAt ? new Date(selectedManaged.expiresAt).toLocaleString('pt-BR') : 'Não informado'}</dd></div></dl><p>Para renovar o plano ou configurar o bot, use o servidor oficial no Discord. O ValtrexCloud aparece aqui quando for vinculado no /painel do bot.</p></div>}</> : <Empty title="Sem aplicações" text="A vinculação depende do proprietário salvo no Manager ou no ValtrexCloud de cada bot."/>}</Section>}
+      {tab === 'verification' && <Section eyebrow="VERIFICAÇÃO" title="Acesso ao servidor" description="O botão publicado pelo bot cria uma autorização individual no Discord para cada pessoa.">
+        {config ? <div className="portal-verification-grid"><div className="portal-verification-card"><span className="portal-overline">ESTADO ATUAL</span><h3>{config.secretConfigured && config.guildId ? 'Pronta para publicar' : 'Configuração pendente'}</h3><p>{config.secretConfigured && config.guildId ? 'Publique ou atualize o botão pelo /painel → ValtrexCloud → Autenticação no servidor principal.' : 'Cadastre o Client Secret e o servidor principal para ativar a verificação.'}</p><dl><div><dt>Contas verificadas</dt><dd>{config.verified ?? '—'}</dd></div><div><dt>Servidor principal</dt><dd>{config.guildId || 'Não definido'}</dd></div><div><dt>Cargo automático</dt><dd>{config.roleId || 'Não definido'}</dd></div><div><dt>Canal publicado</dt><dd>{config.verifyChannelId || 'Ainda não publicado'}</dd></div></dl><div className="portal-actions"><button className="portal-primary" onClick={() => setTab('cloud')}>Configurar OAuth2 →</button><button className="portal-outline" onClick={() => setTab('appearance')}>Personalizar página</button></div></div><div className="portal-verification-aside"><span>COMO A PESSOA VÊ</span><strong>Verificar → Autorizar no Discord → Resultado</strong><p>A tela oficial mostra as permissões antes de qualquer acesso. Após autorizar, a pessoa chega à página de conclusão com a aparência da sua aplicação.</p><button onClick={async () => { try { const result = await call('/preview', { method: 'POST' }); window.open(result.link, '_blank', 'noopener,noreferrer'); } catch (err) { setError(err.message); } }}>Abrir prévia da página ↗</button></div></div> : <Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para ver a verificação."/>}</Section>}
+      {tab === 'subscriptions' && <Section eyebrow="PLANOS" title="Planos e renovação" description="Consulte o prazo de cada bot. A compra e a renovação acontecem no servidor oficial no Discord.">
+        {visibleApps.some(item => item.source === 'manager') ? <div className="portal-subscription-list">{visibleApps.filter(item => item.source === 'manager').map(item => <article key={item.id}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><div><h3>{item.label}</h3><p>{appProfile[item.profile]} · {appStatus[item.status] || appStatus.unknown}</p><strong>{expiryLabel(item.expiresAt)}</strong><small>{item.expiresAt && !Number.isNaN(new Date(item.expiresAt).getTime()) ? new Date(item.expiresAt).toLocaleString('pt-BR') : 'Data ainda não enviada pelo Manager'}</small></div></article>)}</div> : <Empty title="Nenhum plano vinculado" text="Os planos aparecem quando o Manager sincroniza os bots da sua conta Discord."/>}
+        <div className="portal-subscription-actions"><a className="portal-primary" href="/plans">Comparar planos →</a>{catalog.officialInvite ? <a className="portal-outline" href={catalog.officialInvite} target="_blank" rel="noopener noreferrer">Comprar ou renovar no Discord ↗</a> : <span>O convite oficial aparecerá após ser configurado no Manager.</span>}</div></Section>}
       {tab === 'cloud' && <Section eyebrow="VALTREXCLOUD" title="Autenticação Discord" description="O Client Secret permanece somente no backend. O formulário nunca mostra o valor salvo.">
         {config ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ label: config.label, clientId: config.clientId || appId,
           clientSecret: secret || undefined, guildId: config.guildId || null, backupGuildId: config.backupGuildId || null,

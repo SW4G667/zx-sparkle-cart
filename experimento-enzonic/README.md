@@ -8,11 +8,13 @@ Auditoria realizada em 13/10/2026 (UTC) apenas na ramificação experimento-desk
 | --- | --- | --- |
 | Auditoria A e B | FUNCIONANDO | Scripts executados dentro de ambos os contêineres; cotas e imagens consultadas na API do painel. |
 | Desktop Linux em A | FUNCIONANDO dentro do contêiner | TigerVNC, JWM e xterm ativos; [captura real](desktop/screenshot-real.png) feita no display :5. |
+| Visual e gerenciador de arquivos | FUNCIONANDO dentro do contêiner | [Desktop com tema](desktop/screenshot-themed-real.png) e [PCManFM aberto](desktop/screenshot-files-real.png) capturados no servidor A. |
+| Firefox ESR em português | FUNCIONANDO dentro do contêiner, com limitação de segurança | [Captura real de example.org via HTTPS](desktop/screenshot-browser-real.png); isolamento Landlock protegeu a senha VNC. O sandbox interno do Firefox precisou ser desativado. |
 | noVNC em A | INSTALADO | HTTP 200 e upgrade WebSocket 101 no endereço interno 127.0.0.1:50130. |
 | Desktop no navegador Android | BLOQUEADO | O HTTPS público astrosallers.enzonic.dev/vnc.html respondeu 503 mesmo com o serviço escutando na porta alocada. |
 | Painel em B | PREPARADO | Login e sessão testados localmente. O HTTPS público de B também respondeu 503 com um servidor HTTP de prova ativo. |
-| Flatpak de usuário | INSTALADO | Flatpak 1.14.10 e bubblewrap 0.8.0 executaram sem bibliotecas faltantes. |
-| Sober | BLOQUEADO | A consulta assinada ao Flathub falhou porque GPG procura um agente em /usr/bin, indisponível sem root. |
+| Flatpak de usuário | INSTALADO | Flatpak 1.14.10 e bubblewrap 0.8.0 executaram sem bibliotecas faltantes; a criação efetiva do sandbox bubblewrap falhou por falta de permissão de montagem. |
+| Sober | BLOQUEADO | A consulta assinada ao Flathub falhou na configuração GPG; além disso, o contêiner negou a montagem de namespace exigida pelo bubblewrap. |
 | Cordial | INCOMPATÍVEL com o hardware atual | O projeto exige GPU Vulkan; nenhum contêiner possui /dev/dri. |
 | Roblox jogável | BLOQUEADO | Nenhum cliente Roblox foi instalado, renderizado ou testado em uma experiência. |
 
@@ -38,11 +40,19 @@ O painel só permite imagens Python ou Node, sem Docker personalizado. Pacotes D
 
 ## Desktop e reconexão
 
-[bootstrap.py](desktop/bootstrap.py) instala TigerVNC, JWM, xterm, noVNC, websockify e bibliotecas gráficas no diretório do usuário. [session.py](desktop/session.py) inicia 854 × 480 × 16 bits. O VNC aceita conexões só em loopback na porta 5905; o noVNC atende na alocação 50130. Logs ficam em ~/.zenyx/logs. O encerramento sinaliza os subprocessos.
+[bootstrap.py](desktop/bootstrap.py) instala TigerVNC, JWM, xterm, noVNC, websockify e bibliotecas gráficas no diretório do usuário. [browser_bootstrap.py](desktop/browser_bootstrap.py) extrai Firefox ESR, tradução pt-BR e PCManFM sem root. [session.py](desktop/session.py) inicia 854 × 480 × 16 bits. O VNC aceita conexões só em loopback na porta 5905; o noVNC atende na alocação 50130. Logs ficam em ~/.zenyx/logs. O encerramento sinaliza os subprocessos.
+
+O [tema JWM](desktop/jwmrc) usa [papel de parede](desktop/wallpaper.png), menu e barra com atalhos reais para navegador, arquivos e terminal. O Firefox abre sob demanda, mantendo a sessão inicial leve. A [página inicial](desktop/welcome.html) explica o uso do ambiente e contém links de navegação. Os atalhos da barra têm 46 px de altura; a interação por toque no Android permanece sem teste por causa do HTTPS 503.
 
 O Xserver Debian embute o caminho /usr/bin/xkbcomp, indisponível na imagem. O script ajusta uma cópia privada de Xtigervnc para apontar ao xkbcomp extraído no espaço do usuário. A cópia original permanece intacta.
 
-A [captura real](desktop/screenshot-real.png) mostra terminal, janela e barra do JWM. Uma amostra de uso mediu 96.096.256 bytes de RAM; outra com noVNC ativo mediu cerca de 60 MB. Depois das bibliotecas gráficas, o disco usado estava próximo de 50 MB, sem Roblox. São medições pontuais.
+A [captura inicial](desktop/screenshot-real.png) mostra terminal, janela e barra do JWM; a [captura atual](desktop/screenshot-themed-real.png) mostra o tema novo. A instalação inicial usou cerca de 60 a 96 MB de RAM. Com Firefox, PCManFM e uma página HTTPS abertos, uma medição posterior pela API registrou 432,4 MiB de RAM, 847 MiB de disco e 0,22% de CPU. Durante a abertura, o cgroup registrou 568.471.552 bytes de RAM. São medições pontuais, sem Roblox.
+
+### Navegador e limitação do sandbox
+
+O Firefox ESR e PCManFM abriram janelas reais no display VNC. A [captura de arquivos](desktop/screenshot-files-real.png) mostra PCManFM. A [captura do navegador](desktop/screenshot-browser-real.png) mostra `https://example.org` renderizado e os menus em português brasileiro. O acesso HTTPS externo foi comprovado no navegador do contêiner; o acesso remoto a esse navegador pelo celular continua bloqueado.
+
+Sem ajuste, o processo de conteúdo do Firefox cai com `Sandbox: chroot: EPERM` e sinal 11. Com `MOZ_DISABLE_CONTENT_SANDBOX=1`, ele renderiza páginas. O bubblewrap não conseguiu montar namespace (`Failed to make / slave: Permission denied`). O kernel ofereceu Landlock ABI 8. [browser_guard.py](desktop/browser_guard.py) aplica regras antes de iniciar o Firefox e verificou que o processo não consegue ler `~/.zenyx/private/vnc.passwd`, enquanto consegue ler a própria página inicial. Se essa verificação falhar, o navegador não inicia. Seus dados ficam em `~/.zenyx/firefox-home`. Essa proteção de arquivos **não equivale ao sandbox interno do Firefox**; o aviso de segurança visível no navegador é legítimo. Não use o navegador para contas sensíveis neste ambiente.
 
 O teste local fechou e reabriu conexões VNC, e o processo permaneceu ativo. O armazenamento persistiu entre reinícios manuais. Reconexão via Android, suspensão automática e disponibilidade contínua não foram testadas.
 
@@ -58,7 +68,7 @@ O painel consulta o HTTPS do desktop e apresenta indisponibilidade real quando e
 
 A possui SSE4.1 e SSE4.2 e permite namespace de usuário. Com Mesa por software, glxinfo informou llvmpipe, OpenGL 4.5 e perfil OpenGL ES 3.2. eglinfo saiu com código 1; o resultado GLX não comprova que a interface Sober abriria. Não há GPU física.
 
-[Sober](https://vinegarhq.org/Sober/Installation.html#requirements) exige Linux x86-64, SSE4.1 e OpenGL ES 3.0 e é distribuído por Flatpak. Flatpak e bubblewrap iniciaram, mas a consulta assinada ao Flathub terminou em “No GPG signatures found” após tentar iniciar /usr/bin/gpg-agent, ausente na imagem sem root. A verificação de assinatura não foi desligada. O aplicativo, sua interface e experiências Roblox não foram testados.
+[Sober](https://vinegarhq.org/Sober/Installation.html#requirements) exige Linux x86-64, SSE4.1 e OpenGL ES 3.0 e é distribuído por Flatpak. Flatpak e bubblewrap exibiram versão, mas a consulta assinada ao Flathub terminou em “No GPG signatures found” após tentar iniciar /usr/bin/gpg-agent, ausente na imagem sem root. Uma tentativa real de iniciar o isolamento bubblewrap terminou em `Failed to make / slave: Permission denied`, e `unshare -Urm true` terminou em `cannot change root filesystem propagation: Permission denied`. A verificação de assinatura não foi desligada. O aplicativo, sua interface e experiências Roblox não foram testados.
 
 [Cordial](https://luohoa97.github.io/cordial/) declara necessidade de GPU Vulkan. Sem /dev/dri, o servidor não atende esse requisito de hardware.
 

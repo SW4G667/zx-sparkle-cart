@@ -129,7 +129,8 @@ def main():
     window_manager = start("jwm", [str(OVERLAY / "usr/bin/jwm"), "-f",
                                    str(HOME / "jwmrc")], env)
     terminal = start("xterm", [str(OVERLAY / "usr/bin/xterm"), "-title",
-                               "Zenyx Desktop", "-geometry", "80x20+35+35"], env)
+                               "Terminal Zenyx", "-geometry", "52x11+340+146",
+                               "-bg", "#0d1b31", "-fg", "#e5f2ff"], env)
     time.sleep(2)
     report("started", display=DISPLAY, geometry=GEOMETRY, depth=16,
            vnc_loopback=connected(), jwm_running=window_manager.poll() is None,
@@ -233,6 +234,39 @@ def main():
         except (OSError, subprocess.TimeoutExpired):
             plans[name] = {"exit": None, "new_packages": []}
     report("software_graphics_plan", plans=plans)
+    if os.environ.get("ZENYX_TEST_APPS") == "1":
+        files = start("pcmanfm", ["sh", str(HOME / "launch-files.sh")], env)
+        time.sleep(5)
+        files_image = STATE / "screenshot-files.png"
+        files_capture = subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-f", "x11grab",
+             "-video_size", GEOMETRY, "-i", DISPLAY, "-frames:v", "1",
+             str(files_image)], env=env, capture_output=True, timeout=20, check=False)
+        report("files", running=files.poll() is None, exit=files.poll(),
+               screenshot=files_capture.returncode == 0 and files_image.is_file(),
+               bytes=files_image.stat().st_size if files_image.is_file() else 0)
+        test_url = os.environ.get("ZENYX_TEST_URL", "file://" +
+                                  str(HOME / ".zenyx/firefox-home/welcome.html"))
+        browser = start("firefox", ["sh", str(HOME / "launch-browser.sh"), test_url], env)
+        time.sleep(18)
+        browser_image = STATE / "screenshot-browser.png"
+        browser_capture = subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-f", "x11grab",
+             "-video_size", GEOMETRY, "-i", DISPLAY, "-frames:v", "1",
+             str(browser_image)], env=env, capture_output=True, timeout=20, check=False)
+        memory_file = Path("/sys/fs/cgroup/memory.current")
+        guard_file = STATE / "firefox-home/guard-report.json"
+        try:
+            guard = json.loads(guard_file.read_text())
+        except (OSError, json.JSONDecodeError):
+            guard = None
+        report("applications", browser_running=browser.poll() is None,
+               browser_exit=browser.poll(), file_manager_running=files.poll() is None,
+               browser_guard=guard,
+               tested_url=test_url,
+               screenshot=browser_capture.returncode == 0 and browser_image.is_file(),
+               bytes=browser_image.stat().st_size if browser_image.is_file() else 0,
+               memory_bytes=int(memory_file.read_text()) if memory_file.is_file() else None)
     while not STOP and xserver.poll() is None and window_manager.poll() is None:
         time.sleep(1)
     return 0 if STOP else 1

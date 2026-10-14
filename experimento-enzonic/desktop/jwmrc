@@ -1,13 +1,42 @@
 <?xml version="1.0"?>
 <JWM>
-  <RootMenu onroot="12">
+  <WindowStyle>
+    <Font>DejaVu Sans-11</Font>
+    <Width>2</Width>
+    <Height>28</Height>
+    <Corner>5</Corner>
+    <Foreground>#d0def2</Foreground>
+    <Background>#233650</Background>
+    <Outline>#445d79</Outline>
+    <Active><Foreground>#f7fbff</Foreground><Background>#24538f:#17365f</Background><Outline>#64c8f7</Outline></Active>
+  </WindowStyle>
+  <TrayStyle>
+    <Font>DejaVu Sans-11</Font>
+    <Background>#0d1d35</Background>
+    <Foreground>#e5f2ff</Foreground>
+    <Active><Background>#27548a</Background><Foreground>#ffffff</Foreground></Active>
+  </TrayStyle>
+  <MenuStyle>
+    <Font>DejaVu Sans-11</Font>
+    <Background>#142741</Background>
+    <Foreground>#e5f2ff</Foreground>
+    <Outline>#4598c9</Outline>
+    <Active><Background>#27548a</Background><Foreground>#ffffff</Foreground></Active>
+  </MenuStyle>
+  <RootMenu label="Zenyx" height="36" onroot="12">
+    <Program label="Navegador Firefox">sh /home/container/launch-browser.sh</Program>
+    <Program label="Arquivos">sh /home/container/launch-files.sh</Program>
     <Program label="Terminal">xterm</Program>
+    <Separator/>
   </RootMenu>
   <Desktops width="1" height="1">
-    <Background type="solid">#17243b</Background>
+    <Background type="image">/home/container/wallpaper.png</Background>
   </Desktops>
-  <Tray x="0" y="-1" height="44" autohide="false">
-    <TrayButton label="Aplicativos">root:1</TrayButton>
+  <Tray x="0" y="-1" height="46">
+    <TrayButton label="  ZENYX  ">root:1</TrayButton>
+    <TrayButton label="  Navegador  ">exec:sh /home/container/launch-browser.sh</TrayButton>
+    <TrayButton label="  Arquivos  ">exec:sh /home/container/launch-files.sh</TrayButton>
+    <TrayButton label="  Área de trabalho  ">showdesktop</TrayButton>
     <TaskList/>
     <Clock format="%H:%M"/>
   </Tray>

@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!-- Tema original do Zenyx inspirado na organização do Windows 11. -->
+<JWM>
+  <WindowStyle>
+    <Font>DejaVu Sans-11</Font>
+    <Width>2</Width>
+    <Height>31</Height>
+    <Corner>5</Corner>
+    <Foreground>#34445d</Foreground>
+    <Background>#e9f1fb</Background>
+    <Outline>#9eb5d1</Outline>
+    <Active>
+      <Foreground>#152c4b</Foreground>
+      <Background>#f5f9ff</Background>
+      <Outline>#3182d9</Outline>
+    </Active>
+  </WindowStyle>
+  <TrayStyle>
+    <Font>DejaVu Sans-11</Font>
+    <Background>#eaf2fc</Background>
+    <Foreground>#183151</Foreground>
+    <Outline>#abc5e0</Outline>
+    <Active><Background>#d6e8fb</Background><Foreground>#114c87</Foreground></Active>
+  </TrayStyle>
+  <TrayButtonStyle>
+    <Background>#eaf2fc</Background>
+    <Active><Background>#c7e3fc</Background></Active>
+  </TrayButtonStyle>
+  <TaskListStyle>
+    <Active><Background>#c7e3fc</Background><Foreground>#113a66</Foreground></Active>
+  </TaskListStyle>
+  <MenuStyle>
+    <Font>DejaVu Sans-11</Font>
+    <Background>#f5f9ff</Background>
+    <Foreground>#173554</Foreground>
+    <Outline>#a3c5e9</Outline>
+    <Active><Background>#d4eaff</Background><Foreground>#11385f</Foreground></Active>
+  </MenuStyle>
+  <RootMenu label="Zenyx" height="42" onroot="12">
+    <Program icon="/home/container/assets/win11/browser.png" label="Navegador Firefox">sh /home/container/launch-browser.sh</Program>
+    <Program icon="/home/container/assets/win11/files.png" label="Arquivos">sh /home/container/launch-files.sh</Program>
+    <Program icon="/home/container/assets/win11/terminal.png" label="Terminal">xterm</Program>
+  </RootMenu>
+  <Desktops width="1" height="1">
+    <Background type="image">/home/container/assets/win11/wallpaper.png</Background>
+  </Desktops>
+  <Tray x="0" y="-1" width="854" height="54">
+    <Spacer width="333"/>
+    <TrayButton icon="/home/container/assets/win11/start.png" popup="Iniciar">root:1</TrayButton>
+    <TrayButton icon="/home/container/assets/win11/browser.png" popup="Navegador">exec:sh /home/container/launch-browser.sh</TrayButton>
+    <TrayButton icon="/home/container/assets/win11/files.png" popup="Arquivos">exec:sh /home/container/launch-files.sh</TrayButton>
+    <TrayButton icon="/home/container/assets/win11/terminal.png" popup="Terminal">exec:xterm</TrayButton>
+    <TaskList labeled="false" maxwidth="52" height="46"/>
+    <TrayButton label=" ▢ " popup="Mostrar área de trabalho">showdesktop</TrayButton>
+    <Clock format="%H:%M" width="66"/>
+  </Tray>
+  <Key mask="4" key="d">showdesktop</Key>
+  <Key mask="4" key="e">exec:sh /home/container/launch-files.sh</Key>
+</JWM>

@@ -22,6 +22,10 @@ PRIVATE = STATE / "private"
 DISPLAY = ":5"
 VNC_PORT = 5905
 WEB_PORT = int(os.environ.get("ZENYX_WEB_PORT", "50130"))
+WEB_CHECK_INTERVAL = 10
+WEB_FAILURE_THRESHOLD = 3
+WEB_RESTART_WINDOW = 60
+WEB_RESTART_LIMIT = 3
 GEOMETRY = "854x480"
 PROCESSES = []
 STOP = False
@@ -53,6 +57,104 @@ def connected():
             return sock.recv(12).startswith(b"RFB ")
     except OSError:
         return False
+
+
+def web_command():
+    return [sys.executable, "-m", "websockify",
+            "--web=" + str(OVERLAY / "usr/share/novnc"),
+            "0.0.0.0:" + str(WEB_PORT), "127.0.0.1:5905"]
+
+
+def probe_web():
+    http = False
+    websocket = False
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:" + str(WEB_PORT) + "/vnc.html",
+                                    timeout=1) as response:
+            http = response.status == 200 and b"noVNC" in response.read(4096)
+    except (OSError, TimeoutError):
+        pass
+    if http:
+        try:
+            with socket.create_connection(("127.0.0.1", WEB_PORT), timeout=2) as sock:
+                sock.sendall(b"GET /websockify HTTP/1.1\r\nHost: localhost\r\n"
+                             b"Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                             b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                             b"Sec-WebSocket-Version: 13\r\n"
+                             b"Sec-WebSocket-Protocol: binary\r\n\r\n")
+                websocket = sock.recv(512).startswith(b"HTTP/1.1 101")
+        except OSError:
+            pass
+    return http, websocket
+
+
+def wait_web_ready(web):
+    http = websocket = False
+    for _ in range(20):
+        if web.poll() is not None:
+            break
+        http, websocket = probe_web()
+        if http and websocket:
+            break
+        time.sleep(0.25)
+    return http, websocket
+
+
+def supervise_web_session(xserver, window_manager, web, env):
+    """Mantém o acesso web ativo sem reiniciar a sessão gráfica."""
+    web_failures = 0
+    web_restart_times = []
+    next_web_check = time.monotonic() + WEB_CHECK_INTERVAL
+    while not STOP and xserver.poll() is None and window_manager.poll() is None:
+        now = time.monotonic()
+        reason = None
+        if web.poll() is not None:
+            reason = "process exited"
+        elif now >= next_web_check:
+            web_http, web_socket = probe_web()
+            next_web_check = time.monotonic() + WEB_CHECK_INTERVAL
+            if web_http and web_socket:
+                web_failures = 0
+            else:
+                web_failures += 1
+                report("web_probe", http_loopback=web_http,
+                       websocket_upgrade=web_socket,
+                       consecutive_failures=web_failures)
+                if web_failures >= WEB_FAILURE_THRESHOLD:
+                    reason = "local probe failed"
+        if reason:
+            web_restart_times = [t for t in web_restart_times
+                                 if now - t < WEB_RESTART_WINDOW]
+            if len(web_restart_times) >= WEB_RESTART_LIMIT:
+                report("error", component="websockify",
+                       reason="restart limit reached",
+                       attempts=len(web_restart_times), window_seconds=WEB_RESTART_WINDOW)
+                return 1
+            if web.poll() is None:
+                web.terminate()
+                try:
+                    web.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    web.kill()
+                    web.wait(timeout=3)
+            attempt = len(web_restart_times) + 1
+            web_restart_times.append(now)
+            report("web_restart", reason=reason, attempt=attempt, old_exit=web.poll())
+            time.sleep(min(2 ** (attempt - 1), 4))
+            if STOP:
+                break
+            web = start("websockify", web_command(), env)
+            web_http, web_socket = wait_web_ready(web)
+            report("web_restart_probe", attempt=attempt, http_loopback=web_http,
+                   websocket_upgrade=web_socket, websockify_running=web.poll() is None)
+            if web_http and web_socket and web.poll() is None:
+                web_failures = 0
+                next_web_check = time.monotonic() + WEB_CHECK_INTERVAL
+            else:
+                web_failures = WEB_FAILURE_THRESHOLD - 1
+                next_web_check = 0
+        time.sleep(1)
+    return 0 if STOP else 1
 
 
 def main():
@@ -167,36 +269,16 @@ def main():
             graphics[name] = {"exit": None, "reported": []}
     report("graphics", probes=graphics)
     env["PYTHONPATH"] = str(STATE / "python")
-    web = start("websockify", [sys.executable, "-m", "websockify",
-                              "--web=" + str(OVERLAY / "usr/share/novnc"),
-                              "0.0.0.0:" + str(WEB_PORT), "127.0.0.1:5905"], env)
-    web_http = False
-    web_socket = False
-    for _ in range(20):
-        if web.poll() is not None:
-            break
-        try:
-            with urllib.request.urlopen("http://127.0.0.1:" + str(WEB_PORT) + "/vnc.html",
-                                        timeout=1) as response:
-                web_http = response.status == 200 and b"noVNC" in response.read(4096)
-            break
-        except (OSError, TimeoutError):
-            time.sleep(0.25)
-    if web_http:
-        try:
-            with socket.create_connection(("127.0.0.1", WEB_PORT), timeout=2) as sock:
-                sock.sendall(b"GET /websockify HTTP/1.1\r\nHost: localhost\r\n"
-                             b"Upgrade: websocket\r\nConnection: Upgrade\r\n"
-                             b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                             b"Sec-WebSocket-Version: 13\r\n"
-                             b"Sec-WebSocket-Protocol: binary\r\n\r\n")
-                web_socket = sock.recv(512).startswith(b"HTTP/1.1 101")
-        except OSError:
-            pass
+    web = start("websockify", web_command(), env)
+    web_http, web_socket = wait_web_ready(web)
     report("web", http_loopback=web_http, websocket_upgrade=web_socket,
            websockify_running=web.poll() is None,
            web_port=WEB_PORT,
            public_endpoint_tested=False)
+    if not (web_http and web_socket and web.poll() is None):
+        report("error", component="websockify", reason="startup probe failed",
+               exit=web.poll())
+        return 1
     flags = ""
     try:
         for line in Path("/proc/cpuinfo").read_text().splitlines():
@@ -267,9 +349,7 @@ def main():
                screenshot=browser_capture.returncode == 0 and browser_image.is_file(),
                bytes=browser_image.stat().st_size if browser_image.is_file() else 0,
                memory_bytes=int(memory_file.read_text()) if memory_file.is_file() else None)
-    while not STOP and xserver.poll() is None and window_manager.poll() is None:
-        time.sleep(1)
-    return 0 if STOP else 1
+    return supervise_web_session(xserver, window_manager, web, env)
 
 
 if __name__ == "__main__":

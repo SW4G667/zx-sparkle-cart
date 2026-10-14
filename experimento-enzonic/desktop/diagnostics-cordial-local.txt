@@ -1,0 +1,45 @@
+Teste local em 14/10/2026 — contêiner Ubuntu 24.04 amd64, 2 vCPU,
+4 GiB de RAM, Xvfb :5 (854x480x24), sem /dev/dri.
+Este arquivo NÃO descreve uma instalação nos servidores Enzonic.
+Nenhum APK Roblox foi instalado nem experiência carregada.
+
+$ cordial --doctor --offline
+ok    cordial-run is at /usr/bin/cordial-run
+info  Roblox is not installed yet
+      Press Download Roblox in the launcher. It fetches a build once, about 230 MB.
+ok    Official build
+ok    running as an ordinary user
+warn  the game opens on X11
+      X11 is the rougher backend, and Wayland gets the fixes first. If your desktop offers a Wayland session at the login screen, use it.
+ok    Vulkan driver files: lvp_icd.json
+warn  the only Vulkan device is a CPU renderer: llvmpipe (LLVM 20.1.2, 256 bits)
+      Vulkan works, but only on the CPU, so Roblox would render in software and be very slow. No GPU was found in /sys/class/drm either; if this machine has one, its driver is not loaded.
+info  Cordial will draw its window with GTK's cairo renderer, because the only Vulkan device is a CPU renderer (llvmpipe (LLVM 20.1.2, 256 bits))
+      GTK's GL renderer stops presenting beside the engine's OpenGL ES, which would leave a focused text box with no editor. Set GSK_RENDERER yourself to choose another.
+warn  no PipeWire or PulseAudio socket in this session
+      Roblox will try ALSA directly, which may leave you without sound. Start PipeWire (systemctl --user start pipewire pipewire-pulse).
+warn  no D-Bus session bus
+      Your sign-in will be kept in a plain file, and notifications and GameMode will not work. Run Cordial from inside your desktop session.
+info  could not check for GameMode without a session bus
+warn  nothing is registered for the website's Play button
+      Installing Cordial from a package registers it. From a source build, copy packaging/io.github.luohoa97.Cordial.desktop to ~/.local/share/applications/ and run `xdg-mime default io.github.luohoa97.Cordial.desktop x-scheme-handler/roblox-player x-scheme-handler/roblox`.
+info  Deno is not installed, so a plugin that runs code will not start
+      Only matters if you use such a plugin. Settings, Plugins has a Download button under "Deno is not installed" (about 39 MB).
+ok    21 GB free for Roblox's files
+info  no profile exists yet
+info  VR: no Quest build imported (optional)
+      To play in a headset, import the Quest build in Settings → VR. See docs/vr.md.
+
+5 warnings; Roblox should still start.
+
+Nota: a última linha é a conclusão preliminar da ferramenta de diagnóstico,
+não um teste de execução do Roblox. O espaço livre de 21 GB se refere ao
+contêiner local e não à cota de 15 GB da Enzonic.
+
+$ objdump -T /tmp/zenyx-cordial-run | grep GLIBC_2.38
+0000000000000000      DF *UND* 0000000000000000 (GLIBC_2.38) __isoc23_strtol
+0000000000000000      DF *UND* 0000000000000000 (GLIBC_2.38) __isoc23_strtoll
+0000000000000000      DF *UND* 0000000000000000 (GLIBC_2.38) __isoc23_sscanf
+
+$ vkcube --c 10000 --width 480 --height 400
+Selected GPU 0: llvmpipe (LLVM 20.1.2, 256 bits), type: Cpu

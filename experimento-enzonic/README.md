@@ -1,6 +1,6 @@
 # Zenyx Cloud Desktop V2 — experimento Enzonic
 
-Auditoria realizada em 13/10/2026 (UTC) apenas na ramificação experimento-desktop-enzonic-20261013. Nenhuma credencial está neste repositório.
+Auditoria iniciada em 13/10/2026 (UTC), com verificações adicionais em 14/10/2026, apenas na ramificação experimento-desktop-enzonic-20261013. Nenhuma credencial está neste repositório.
 
 ## Estado verificado
 
@@ -11,14 +11,15 @@ Auditoria realizada em 13/10/2026 (UTC) apenas na ramificação experimento-desk
 | Visual e gerenciador de arquivos | FUNCIONANDO dentro do contêiner | [Desktop com tema](desktop/screenshot-themed-real.png) e [PCManFM aberto](desktop/screenshot-files-real.png) capturados no servidor A. |
 | Firefox ESR em português | FUNCIONANDO dentro do contêiner, com limitação de segurança | [Captura real de example.org via HTTPS](desktop/screenshot-browser-real.png); isolamento Landlock protegeu a senha VNC. O sandbox interno do Firefox precisou ser desativado. |
 | noVNC em A | INSTALADO | HTTP 200 e upgrade WebSocket 101 no endereço interno 127.0.0.1:50130. |
-| Desktop no navegador Android | BLOQUEADO | O HTTPS público astrosallers.enzonic.dev/vnc.html respondeu 503 mesmo com o serviço escutando na porta alocada. |
-| Painel em B | PREPARADO | Login e sessão testados localmente. O HTTPS público de B também respondeu 503 com um servidor HTTP de prova ativo. |
+| Desktop no navegador Android | BLOQUEADO | O Chrome do proprietário mostrou `ERR_CONNECTION_RESET` ao abrir astrosallers.enzonic.dev/vnc.html; o serviço escuta na porta alocada. |
+| Painel em B | PREPARADO | Login e sessão testados localmente. A consulta HTTPS externa a B recebeu reset antes da resposta HTTP; o painel ainda não foi ativado no servidor. |
 | Flatpak de usuário | INSTALADO | Flatpak 1.14.10 e bubblewrap 0.8.0 executaram sem bibliotecas faltantes; a criação efetiva do sandbox bubblewrap falhou por falta de permissão de montagem. |
 | Sober | BLOQUEADO | A consulta assinada ao Flathub falhou na configuração GPG; além disso, o contêiner negou a montagem de namespace exigida pelo bubblewrap. |
-| Cordial | INCOMPATÍVEL com o hardware atual | O projeto exige GPU Vulkan; nenhum contêiner possui /dev/dri. |
+| Cordial em A/B | BLOQUEADO | A versão 0.27 não roda diretamente no Debian 12 dos servidores: `cordial-run` requer GLIBC_2.38 e o sistema fornece 2.36. A interface e o Vulkan por CPU foram testados apenas em um contêiner local Ubuntu 24.04. |
+| Vulkan por software local | FUNCIONANDO no teste local | `vkcube` renderizou pelo llvmpipe no Xvfb; isso não mede o desempenho do Roblox nem comprova funcionamento na Enzonic. |
 | Roblox jogável | BLOQUEADO | Nenhum cliente Roblox foi instalado, renderizado ou testado em uma experiência. |
 
-As fases B, C e D não cumprem seus critérios finais de aprovação. A imagem prova uma sessão Linux gráfica real no servidor A. O HTTP 503 impede vê-la no celular.
+As fases B, C e D não cumprem seus critérios finais de aprovação. A imagem prova uma sessão Linux gráfica real no servidor A. O acesso pelo celular ainda não foi comprovado.
 
 ## Infraestrutura medida
 
@@ -62,7 +63,7 @@ Por padrão, a senha VNC é gerada aleatoriamente a cada início e não é publi
 
 [server.js](panel/server.js) e [index.js](panel/index.js) formam o painel Node sem dependências npm. No primeiro início, ele gera uma senha aleatória, salva somente o hash scrypt em ~/.zenyx-panel/auth.json e guarda a senha inicial em ~/.zenyx-panel/primeiro-acesso.txt. Ambos os arquivos usam modo 0600. A senha não aparece no console. Cookies de sessão são Secure, HttpOnly e SameSite=Strict; a sessão pode ser encerrada e expira após 12 horas. Há limite de tentativas de login.
 
-O painel consulta o HTTPS do desktop e apresenta indisponibilidade real quando ele responde 503. Não exibe CPU, RAM ou FPS fictícios. Login, cookie, senha incorreta, logout e estado indisponível passaram em teste HTTP local. Ele não foi ativado em B enquanto a senha SFTP publicada continuar válida. O subdomínio zenyx-desktop-v2.enzonic.dev respondeu 503 durante um teste com servidor HTTP de prova ativo.
+O painel consulta o HTTPS do desktop e apresenta indisponibilidade real quando ele responde 503. Não exibe CPU, RAM ou FPS fictícios. Login, cookie, senha incorreta, logout e estado indisponível passaram em teste HTTP local. Ele não foi ativado em B enquanto a senha SFTP publicada continuar válida. Uma consulta via proxy de saída deste ambiente a zenyx-desktop-v2.enzonic.dev respondeu 503 durante um teste com servidor HTTP de prova ativo.
 
 ## Roblox e gráficos
 
@@ -70,13 +71,21 @@ A possui SSE4.1 e SSE4.2 e permite namespace de usuário. Com Mesa por software,
 
 [Sober](https://vinegarhq.org/Sober/Installation.html#requirements) exige Linux x86-64, SSE4.1 e OpenGL ES 3.0 e é distribuído por Flatpak. Flatpak e bubblewrap exibiram versão, mas a consulta assinada ao Flathub terminou em “No GPG signatures found” após tentar iniciar /usr/bin/gpg-agent, ausente na imagem sem root. Uma tentativa real de iniciar o isolamento bubblewrap terminou em `Failed to make / slave: Permission denied`, e `unshare -Urm true` terminou em `cannot change root filesystem propagation: Permission denied`. A verificação de assinatura não foi desligada. O aplicativo, sua interface e experiências Roblox não foram testados.
 
-[Cordial](https://luohoa97.github.io/cordial/) declara necessidade de GPU Vulkan. Sem /dev/dri, o servidor não atende esse requisito de hardware.
+[Cordial](https://luohoa97.github.io/cordial/) pode detectar Vulkan por software. Em um contêiner **local** Ubuntu 24.04 limitado a 2 CPUs e 4 GiB, sem `/dev/dri`, instalamos o pacote oficial Cordial 0.27.0 para amd64 (SHA-256 `edf01f89b0ee725fee9d309d25e1ebdaa1e453f28515d46c4df6685a593cbe82`). O [diagnóstico local completo](desktop/diagnostics-cordial-local.txt) aceitou o llvmpipe como dispositivo Vulkan de CPU, com aviso explícito de que Roblox seria muito lento, além de apontar falta de áudio e D-Bus. A [interface do Cordial aberta](desktop/screenshot-cordial-launcher-local.png) e uma [cena Vulkan real renderizada pelo llvmpipe](desktop/screenshot-vulkan-local.png) foram capturadas no Xvfb. O processo Cordial usava cerca de 282 MiB de RSS e o Xvfb 66 MiB em uma medição sem jogo.
+
+O botão de instalação chegou à tela [“No Roblox build found”](desktop/screenshot-cordial-download-local.png). O download automático falhou ao alcançar `api.pureapk.com`; a consulta HTTP externa recebeu uma página Cloudflare 403 (“Sorry, you have been blocked”), inclusive com os cabeçalhos esperados pelo cliente. Não removemos a verificação de assinatura nem importamos um APK não verificado. A [documentação de instalação do Cordial](https://raw.githubusercontent.com/luohoa97/cordial/main/docs/install.md) permite importar manualmente um APK Roblox assinado com `lib/x86_64/libroblox.so` ou `base.apk` acompanhado de `split_config.x86_64.apk`. Um APK extraído de celular ARM comum não satisfaz essa arquitetura. Não há APK x86_64 disponível neste experimento.
+
+Isso ainda não instala Cordial na Enzonic: o `cordial-run` 0.27.0 referencia obrigatoriamente `GLIBC_2.38` (verificado com `objdump -T`), enquanto ambos os servidores usam Debian 12 com glibc 2.36. O pacote também precisa de bibliotecas gráficas adicionais. O teste local de Ubuntu 24.04 demonstra apenas que a interface e Vulkan por CPU abrem; não houve execução do cliente Roblox, carregamento de experiência, medição de FPS nem teste no celular. GPU física continua ausente nos servidores.
 
 ## Segurança e bloqueio externo
 
 A chave de API exposta foi revogada e passou a responder 401. A senha SFTP também foi exposta; o usuário decidiu trocá-la depois dos testes, portanto ela não foi usada. Não ativar o painel com credenciais reais até essa rotação. Nenhum segredo está em código, commits, captura ou neste relatório.
 
-O bloqueio decisivo para Android é a publicação HTTPS das alocações pela Enzonic. Ambos os subdomínios responderam 503 durante servidores HTTP ativos. É preciso verificar no painel ou com o suporte por que a rota não alcança os contêineres. Não usar túneis para contornar limites do provedor.
+O acesso público falhou em três caminhos: no Chrome Android do proprietário, `astrosallers.enzonic.dev/vnc.html` mostrou `ERR_CONNECTION_RESET`; em um Sandbox Vercel temporário na região `gru1`, HTTPS dos subdomínios A e B foi redefinido durante a conexão (`curl` 35) e HTTP também foi redefinido (`curl` 56), ambos antes de receber resposta HTTP; pelo proxy de saída deste ambiente, as consultas devolveram HTTP 503 com `upstream connect error or disconnect/reset before headers`. No mesmo Sandbox, `https://panel.enzonic.com/` respondeu 200, funcionando como controle de conectividade. O Sandbox foi parado após a medição.
+
+Um print do painel enviado pelo proprietário mostra `astrosallers.enzonic.dev` como subdomínio ativo da alocação principal `127.0.0.1:50130`; outro mostra o servidor A ligado há quase 12 horas e o diagnóstico interno com HTTP e upgrade WebSocket funcionando na porta 50130. Isso localiza a falha **fora do serviço HTTP interno**, mas ainda não revela se o reset ocorre na borda do domínio ou na rota até o nó. É preciso examinar o mapeamento com o provedor. Não usar túneis para contornar limites do provedor.
+
+O [código público atual da aba Rede](https://panel.enzonic.com/build/assets/NetworkContainer-BV-OtHD2.js) revelou dois fluxos distintos: o subdomínio antigo usa `/subdomain`, enquanto o botão **“Obter endereço enzonic.dev”** oferece um endereço gerenciado do tipo **“HTTPS website”** via `/custom-domains`. A interface descreve exatamente o serviço já ativo em A: HTTP simples em `0.0.0.0:50130`, com HTTPS e WebSockets gerenciados pela Enzonic. Criar um endereço gerenciado é uma operação separada da exclusão do subdomínio antigo; ainda falta verificar se a opção está habilitada no plano gratuito e se a nova rota chega ao noVNC. O proprietário está verificando esse assistente no painel. Não há evidência suficiente para afirmar que o domínio legado possui rota HTTPS.
 
 ## Prévia visual e controles — 14/10/2026
 
@@ -84,10 +93,10 @@ O [tema claro inspirado na organização do Windows 11](desktop/jwmrc-win11), os
 
 O contêiner local abriu a sessão 854 × 480 × 16 bits. [Captura real do Firefox nessa sessão](desktop/screenshot-win11-browser-local.png) e [captura do noVNC em formato paisagem de celular](desktop/screenshot-win11-mobile-local.png). Em Chromium automatizado, a página `mobile.html` conectou por WebSocket/VNC sem erro de JavaScript. Mouse e toque abriram o menu JWM; o mouse abriu xterm; o teclado do visor enviou `TOQUE_OK` ao xterm; a API de tela cheia retornou ativa. Após fechar a conexão e criar outra, o texto permaneceu na mesma janela, comprovando reconexão enquanto o contêiner continuou ativo. O noVNC traduz toque longo ou dois dedos em clique direito, conforme o código da versão 1.3 usada no teste; o clique direito não foi validado em hardware Android real.
 
-O [instalador do tema](desktop/install_theme.py) copia os arquivos apenas para o diretório do usuário do servidor A e guarda o JWM anterior. Foi testado em HOME temporário. Ele **não foi executado na Enzonic**: a chave de API exposta foi revogada, a senha SFTP exposta ainda aguarda rotação e a rota pública continua 503. A sessão antiga em A mantém o visual anterior. No caso de a rota ser corrigida e o tema implantado, o visor será `https://astrosallers.enzonic.dev/mobile.html`; esse endereço **não está funcional agora**.
+O [instalador do tema](desktop/install_theme.py) copia os arquivos apenas para o diretório do usuário do servidor A e guarda o JWM anterior. Foi testado em HOME temporário. Ele **não foi executado na Enzonic**: a chave de API exposta foi revogada, a senha SFTP exposta ainda aguarda rotação e o acesso público apresentou reset no Android. A sessão antiga em A mantém o visual anterior. Com o tema implantado e a rota validada, o visor será `https://astrosallers.enzonic.dev/mobile.html`; esse endereço **não está funcional agora**.
 
-A Vercel conectada contém `zenyxapplications`, que publica outro repositório e outro aplicativo. Substituí-lo violaria o limite deste experimento. Mesmo em um novo projeto, Vercel Functions no plano gratuito não oferecem uma sessão gráfica contínua com GPU nem resolvem o WebSocket público 503 da Enzonic. A Hugging Face conectada permite apenas leitura de repositórios; o único Space encontrado, `china12n/007-ai-agent-runtime`, é outro projeto. A [documentação atual de Spaces](https://huggingface.co/docs/hub/spaces-overview) informa que criar um Space Docker requer plano pago. Nenhum desses serviços foi apresentado como um PC funcional, nem houve implantação neles.
+A Vercel conectada contém `zenyxapplications`, que publica outro repositório e outro aplicativo. Para testar a rota sem alterar esse aplicativo, foi criado o projeto separado `zenyx-desktop-v2`, ainda **sem implantação**. Seu Sandbox de diagnóstico ficou ativo por cerca de 106 segundos e foi parado. Vercel Functions no plano gratuito não oferecem uma sessão gráfica contínua com GPU, nem resolvem a conexão externa com a Enzonic que também falhou a partir do Sandbox. A Hugging Face conectada permite apenas leitura de repositórios; o único Space encontrado, `china12n/007-ai-agent-runtime`, é outro projeto. A [documentação atual de Spaces](https://huggingface.co/docs/hub/spaces-overview) informa que criar um Space Docker requer plano pago. Nenhum desses serviços foi apresentado como um PC funcional, nem houve implantação neles.
 
-O objetivo de Roblox segue bloqueado: não há GPU em A/B, o Flatpak/Sober não iniciou, Cordial requer Vulkan, e nenhuma experiência foi carregada. O tema e o visor não alteram esses requisitos. A rota HTTPS e a rotação de credenciais são pendências para o acesso público seguro; a viabilidade de Roblox também depende de um runtime gráfico aceito pelo contêiner.
+O objetivo de Roblox segue bloqueado: não há GPU em A/B, o Flatpak/Sober não iniciou, o Cordial atual não roda diretamente no Debian 12 e o download automático do APK x86_64 assinado falhou no teste local. Nenhuma experiência foi carregada; a meta de 50 a 70 FPS não foi medida e não pode ser prometida. O tema e o visor não alteram esses requisitos. A rota HTTPS e a rotação de credenciais são pendências para o acesso público seguro; a viabilidade de Roblox também depende de um runtime gráfico aceito pelo contêiner.
 
 Fontes: [termos da Enzonic](https://enzonic.com/legal/terms), [Sober](https://sober.vinegarhq.org/), [requisitos do Sober](https://vinegarhq.org/Sober/Installation.html#requirements) e [Cordial](https://luohoa97.github.io/cordial/).

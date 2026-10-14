@@ -1,0 +1,10 @@
+**
+!desktop/
+!desktop/assets/
+!desktop/assets/win11/
+!desktop/assets/win11/*.png
+!desktop/jwmrc-win11
+!desktop/mobile.html
+!desktop/welcome.html
+!preview/
+!preview/*.sh

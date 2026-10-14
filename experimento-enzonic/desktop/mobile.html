@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10182b">
+  <title>Zenyx Desktop · Sessão remota</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0b1221; color: #f5f8ff; overflow: hidden; }
+    button, input { font: inherit; }
+    button { cursor: pointer; touch-action: manipulation; }
+    #app { height: 100dvh; display: flex; flex-direction: column; }
+    .bar { display: flex; align-items: center; gap: 9px; min-height: 57px; padding: 7px max(10px, env(safe-area-inset-right)) 7px max(10px, env(safe-area-inset-left)); background: #19243b; border-bottom: 1px solid #394962; box-shadow: 0 4px 25px #0005; z-index: 2; }
+    .brand { display: flex; align-items: center; gap: 9px; margin-right: auto; font-weight: 750; white-space: nowrap; letter-spacing: -.02em; }
+    .brand img { width: 32px; height: 32px; }
+    .brand small { display: block; font-size: 10px; font-weight: 550; letter-spacing: .09em; color: #9dbbe2; }
+    .status { display: flex; align-items: center; gap: 7px; color: #c0d0e9; font-size: 12px; white-space: nowrap; }
+    .status::before { content: ""; height: 8px; width: 8px; border-radius: 50%; background: #efb866; }
+    .status[data-state="connected"]::before { background: #65d5a1; box-shadow: 0 0 10px #65d5a1; }
+    .status[data-state="offline"]::before { background: #fa798d; }
+    .bar button, .dialog button { border: 1px solid #526481; border-radius: 10px; background: #2a3b5a; color: #f4f8ff; min-height: 40px; min-width: 40px; padding: 0 11px; }
+    .bar button:hover, .bar button:focus-visible, .dialog button:hover { background: #38527b; }
+    #screen { flex: 1; min-height: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #090f1b; touch-action: none; }
+    #screen canvas { outline: none; }
+    #portrait { display: none; position: absolute; left: 50%; bottom: 13px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 20px); padding: 8px 12px; border-radius: 9px; background: #19243bcc; color: #e6efff; font-size: 12px; text-align: center; pointer-events: none; }
+    .dialog-backdrop { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; z-index: 5; background: #091323d9; backdrop-filter: blur(12px); }
+    .dialog-backdrop[hidden] { display: none; }
+    .dialog { width: min(100%, 380px); padding: 26px; border-radius: 19px; background: #1b2b47; border: 1px solid #5174a3; box-shadow: 0 16px 60px #000a; }
+    .dialog h1 { margin: 0 0 7px; font-size: 22px; }
+    .dialog p { margin: 0 0 20px; color: #c1d0e7; line-height: 1.45; }
+    .dialog label { display: block; margin: 0 0 8px; font-size: 13px; color: #c1d0e7; }
+    .dialog input { width: 100%; min-height: 46px; padding: 10px 12px; margin-bottom: 15px; border: 1px solid #7187aa; border-radius: 9px; outline: none; background: #101c31; color: white; }
+    .dialog input:focus { border-color: #8ec7ff; }
+    .dialog button { width: 100%; background: #3475c2; border-color: #69aefc; }
+    .dialog .error { min-height: 18px; margin: 12px 0 0; color: #ff9caa; font-size: 12px; }
+    #osk { position: absolute; width: 1px; height: 1px; opacity: 0; left: 0; bottom: 0; z-index: -1; }
+    @media (orientation: portrait) and (max-width: 700px) { #portrait { display: block; } .brand small { display: none; } .bar { gap: 5px; } .bar button { padding: 0 8px; } .status span { display: none; } }
+    @media (max-width: 570px) { .bar button span { display: none; } .brand { font-size: 14px; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header class="bar" aria-label="Controles da sessão">
+      <div class="brand"><img src="./zenyx/start.png" alt=""><div>Zenyx Desktop<small>SESSÃO LINUX REAL</small></div></div>
+      <div id="status" class="status" data-state="offline" role="status"><span>Desconectado</span></div>
+      <button id="reconnect" title="Reconectar" aria-label="Reconectar">↻ <span>Reconectar</span></button>
+      <button id="keyboard" title="Teclado" aria-label="Abrir teclado">⌨ <span>Teclado</span></button>
+      <button id="fullscreen" title="Tela cheia" aria-label="Tela cheia">⛶ <span>Tela cheia</span></button>
+    </header>
+    <main id="screen" aria-label="Área de trabalho remota"><div id="portrait">Gire o celular para paisagem para usar o desktop com mais conforto.</div></main>
+    <input id="osk" type="text" inputmode="text" autocomplete="off" autocapitalize="off" aria-label="Entrada de texto no desktop">
+  </div>
+  <div id="gate" class="dialog-backdrop">
+    <form class="dialog" id="login">
+      <h1>Entrar no desktop</h1>
+      <p>A sessão gráfica continua no servidor quando esta aba é fechada, enquanto o servidor permanecer ativo. Toque longo ou dois dedos fazem clique direito.</p>
+      <label for="password">Senha da sessão VNC</label>
+      <input id="password" type="password" required autocomplete="off" spellcheck="false">
+      <button type="submit">Conectar</button>
+      <p id="error" class="error" aria-live="polite"></p>
+    </form>
+  </div>
+  <script type="module">
+    import RFB from './core/rfb.js';
+    const screen = document.getElementById('screen');
+    const gate = document.getElementById('gate');
+    const passwordField = document.getElementById('password');
+    const status = document.getElementById('status');
+    const error = document.getElementById('error');
+    const osk = document.getElementById('osk');
+    let rfb = null;
+    let password = '';
+    let retry = null;
+    let attempts = 0;
+    let explicitDisconnect = false;
+    function state(label, kind) { status.dataset.state = kind; status.querySelector('span').textContent = label; status.title = label; }
+    function connect() {
+      if (!password) { gate.hidden = false; passwordField.focus(); return; }
+      clearTimeout(retry);
+      if (rfb) { explicitDisconnect = true; rfb.disconnect(); rfb = null; }
+      explicitDisconnect = false;
+      gate.hidden = true;
+      error.textContent = '';
+      state('Conectando', 'connecting');
+      const url = new URL('websockify', location.href);
+      url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      try {
+        const client = new RFB(screen, url.href, { credentials: { password } });
+        rfb = client;
+        client.scaleViewport = true;
+        client.clipViewport = false;
+        client.resizeSession = false;
+        client.showDotCursor = true;
+        client.addEventListener('connect', () => { if (rfb !== client) return; attempts = 0; state('Conectado', 'connected'); client.focus(); });
+        client.addEventListener('disconnect', event => {
+          if (rfb !== client || explicitDisconnect) return;
+          state('Desconectado', 'offline');
+          if (event.detail.clean) return;
+          attempts++;
+          if (attempts > 3) { gate.hidden = false; error.textContent = 'O servidor não respondeu. Verifique se a sessão está ativa.'; return; }
+          retry = setTimeout(connect, Math.min(1000 * 2 ** attempts, 10000));
+        });
+        client.addEventListener('credentialsrequired', () => { gate.hidden = false; error.textContent = 'Informe a senha da sessão.'; });
+        client.addEventListener('securityfailure', () => { password = ''; gate.hidden = false; error.textContent = 'Autenticação recusada. Confira a senha.'; });
+      } catch (_) { state('Indisponível', 'offline'); gate.hidden = false; error.textContent = 'Não foi possível iniciar a conexão.'; }
+    }
+    document.getElementById('login').addEventListener('submit', event => { event.preventDefault(); password = passwordField.value; passwordField.value = ''; attempts = 0; connect(); });
+    document.getElementById('reconnect').addEventListener('click', () => { attempts = 0; connect(); });
+    document.getElementById('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.getElementById('app').requestFullscreen(); } catch (_) {} });
+    document.getElementById('keyboard').addEventListener('click', () => osk.focus());
+    const special = { Backspace: 0xff08, Enter: 0xff0d, Tab: 0xff09, Escape: 0xff1b, ArrowLeft: 0xff51, ArrowUp: 0xff52, ArrowRight: 0xff53, ArrowDown: 0xff54, Delete: 0xffff };
+    osk.addEventListener('keydown', event => { if (special[event.key] && rfb) { event.preventDefault(); rfb.sendKey(special[event.key]); } });
+    osk.addEventListener('input', () => { if (rfb) for (const char of osk.value) { const cp = char.codePointAt(0); rfb.sendKey(cp <= 0xff ? cp : 0x01000000 | cp); } osk.value = ''; });
+    window.addEventListener('beforeunload', () => { explicitDisconnect = true; if (rfb) rfb.disconnect(); });
+  </script>
+</body>
+</html>

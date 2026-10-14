@@ -69,22 +69,26 @@ def main():
         checked(libc.syscall(446, ruleset_fd, 0), "restrict self")
     finally:
         os.close(ruleset_fd)
-    secret = HOME / ".zenyx/private/vnc.passwd"
-    try:
-        secret.read_bytes()
-    except OSError as exc:
-        blocked = exc.errno in (errno.EACCES, errno.EPERM)
-    else:
-        blocked = False
+    blocked = {}
+    for name in ("vnc.passwd", "vnc-login.txt"):
+        secret = HOME / ".zenyx/private" / name
+        try:
+            secret.read_bytes()
+        except OSError as exc:
+            blocked[name] = exc.errno in (errno.EACCES, errno.EPERM)
+        else:
+            blocked[name] = False
     try:
         (BROWSER_HOME / "welcome.html").read_bytes()
         welcome_accessible = True
     except OSError:
         welcome_accessible = False
-    report = {"landlock_abi": version, "vnc_secret_blocked": blocked,
+    report = {"landlock_abi": version,
+              "vnc_secret_blocked": blocked["vnc.passwd"],
+              "vnc_login_blocked": blocked["vnc-login.txt"],
               "welcome_accessible": welcome_accessible}
     (BROWSER_HOME / "guard-report.json").write_text(json.dumps(report))
-    if not blocked or not welcome_accessible:
+    if not all(blocked.values()) or not welcome_accessible:
         raise RuntimeError("Firefox guard verification failed")
     os.execv(sys.argv[1], sys.argv[1:])
 

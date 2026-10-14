@@ -157,6 +157,64 @@ def supervise_web_session(xserver, window_manager, web, env):
     return 0 if STOP else 1
 
 
+def load_vnc_password():
+    """Cria a senha inicial uma vez e lê somente o arquivo privado validado."""
+    try:
+        private_fd = os.open(PRIVATE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        report("error", component="VNC", reason="private directory inaccessible")
+        return None
+    try:
+        info = os.fstat(private_fd)
+        if (info.st_uid != os.getuid() or
+                stat.S_IMODE(info.st_mode) != 0o700):
+            report("error", component="VNC", reason="private directory permissions invalid")
+            return None
+        name = "vnc-login.txt"
+        try:
+            password_fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                                  os.O_NOFOLLOW, 0o600, dir_fd=private_fd)
+        except FileExistsError:
+            pass
+        except OSError:
+            report("error", component="VNC", reason="password file cannot be created")
+            return None
+        else:
+            password = secrets.token_urlsafe(6)[:8]
+            try:
+                with os.fdopen(password_fd, "w", encoding="ascii") as output:
+                    os.fchmod(output.fileno(), 0o600)
+                    output.write(password + "\n")
+                    output.flush()
+                    os.fsync(output.fileno())
+            except OSError:
+                report("error", component="VNC", reason="password file cannot be written")
+                return None
+        try:
+            password_fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW,
+                                  dir_fd=private_fd)
+        except OSError:
+            report("error", component="VNC", reason="password file inaccessible")
+            return None
+        with os.fdopen(password_fd, "r", encoding="ascii") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or
+                    stat.S_IMODE(info.st_mode) != 0o600):
+                report("error", component="VNC", reason="password file permissions invalid")
+                return None
+            try:
+                password = source.read(64).rstrip("\r\n")
+                if (source.read(1) or len(password) != 8 or
+                        not password.isascii() or not password.isprintable()):
+                    raise ValueError("invalid password")
+            except (UnicodeError, ValueError):
+                report("error", component="VNC", reason="password must have 8 ASCII characters")
+                return None
+            return password
+    finally:
+        os.close(private_fd)
+
+
 def main():
     os.umask(0o077)
     if not 1024 <= WEB_PORT <= 65535:
@@ -192,18 +250,9 @@ def main():
     patched.write_bytes(original.replace(b"/usr/bin\0", b"/tmp/zyn\0", 1))
     patched.chmod(0o700)
     passwd = PRIVATE / "vnc.passwd"
-    password_source = PRIVATE / "vnc-login.txt"
-    if password_source.exists():
-        info = password_source.stat()
-        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600:
-            report("error", component="VNC", reason="password file permissions invalid")
-            return 1
-        password = password_source.read_text().strip()
-        if len(password) != 8 or not password.isascii() or not password.isprintable():
-            report("error", component="VNC", reason="password must have 8 ASCII characters")
-            return 1
-    else:
-        password = secrets.token_urlsafe(6)[:8]
+    password = load_vnc_password()
+    if password is None:
+        return 1
     result = subprocess.run([str(OVERLAY / "usr/bin/tigervncpasswd"), "-f"],
                             input=(password + "\n").encode(), capture_output=True,
                             env=env, timeout=10, check=False)

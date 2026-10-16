@@ -89,7 +89,7 @@ module.exports=async function handler(req,res){
   if(!validUuid(b.product_id))throw Error('Produto inválido');
   const values=[...new Set(String(b.codes||'').split(/\r?\n/).map(x=>x.trim()).filter(x=>x.length>=3&&x.length<=255))];
   if(!values.length||values.length>100)throw Error('Informe de 1 a 100 códigos por vez');
-  const rows=await sql('xg_codes','POST','?on_conflict=product_id,secret_code'.slice(1),values.map(secret_code=>({product_id:b.product_id,secret_code})));
+  const rows=await sql('xg_codes','POST','',values.map(secret_code=>({product_id:b.product_id,secret_code})));
   return send(res,200,{added:rows.length});
  }
  if(action==='codes-remove'&&req.method==='POST'){
@@ -121,7 +121,7 @@ module.exports=async function handler(req,res){
  }
  if(action==='settings-save'&&req.method==='POST'){
   const value={headline:limited(b.headline,140),subtitle:limited(b.subtitle,320),announcement:limited(b.announcement,140),support_email:limited(b.support_email,180),theme:'azure'};
-  await sql('xg_settings','POST','on_conflict=key',{key:'store',value});
+  await sql('xg_settings','PATCH','key=eq.store',{value});
   return send(res,200,{ok:true});
  }
  if(action==='image-upload'&&req.method==='POST'){

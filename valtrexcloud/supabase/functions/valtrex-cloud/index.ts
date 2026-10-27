@@ -922,7 +922,7 @@ async function managerSite(req:Request,path:string) {
 function financePeriod(req:Request) {
  const params=new URL(req.url).searchParams,zone=params.get('zone')==='UTC'?'UTC':'America/Sao_Paulo';
  const today=new Date().toLocaleDateString('en-CA',{timeZone:zone});
- const until=params.get('until')||today,from=params.get('from')||new Date(Date.parse(today+'T12:00:00Z')-29*86400000).toISOString().slice(0,10);
+ const until=params.get('until')??today,from=params.get('from')??new Date(Date.parse(today+'T12:00:00Z')-29*86400000).toISOString().slice(0,10);
  const day=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(value+'T12:00:00Z').toISOString().slice(0,10)===value;
  if(!day(from)||!day(until)||from>until||Date.parse(until)-Date.parse(from)>365*86400000)throw new Error('Período inválido. Escolha até 366 dias.');
  const offset=zone==='UTC'?'Z':'-03:00',start=new Date(from+'T00:00:00'+offset),end=new Date(Date.parse(until+'T00:00:00'+offset)+86400000);

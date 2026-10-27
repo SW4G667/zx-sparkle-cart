@@ -1,4 +1,4 @@
-# ValtrexCloud
+# Cloud
 
 Páginas móveis de verificação e recuperação consentida pelo OAuth2 oficial do Discord. Este diretório é independente da loja antiga na raiz do repositório.
 

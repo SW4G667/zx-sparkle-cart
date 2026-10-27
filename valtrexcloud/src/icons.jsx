@@ -1,6 +1,9 @@
 import React from 'react';
 
 const paths = {
+  products: <><path d="m3 7 9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10M7 5l10 5"/></>,
+  plus: <path d="M12 4v16M4 12h16"/>,
+  edit: <><path d="m15 4 5 5M4 20l4-1L21 6l-5-5L3 14z"/></>,
   cloud: <path d="M7 18h11a4 4 0 0 0 .2-8A6.5 6.5 0 0 0 6 8.5 4.8 4.8 0 0 0 1 13.3 4.8 4.8 0 0 0 7 18Z"/>,
   overview: <><path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/></>,
   apps: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,

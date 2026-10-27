@@ -13,12 +13,13 @@ const db = createClient(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABA
 });
 
 const defaults = {
-  preset: 'valtrex', name: 'Valtrex', title: 'Verifique sua conta',
+  preset: 'dark', name: 'Cloud', title: 'Verifique sua conta',
   description: 'Conecte sua conta Discord para concluir a verificação.',
-  primary: '#7968f8', secondary: '#a99eff', text: '#f6f5fb',
-  background: '#08090d', card: '#161821', border: '#393c4e',
-  radius: 22, button: 'Continuar com Discord', footer: 'ValtrexCloud',
+  primary: '#f4f4f5', secondary: '#d4d4d8', text: '#fafafa',
+  background: '#09090b', card: '#121214', border: '#303034',
+  radius: 22, button: 'Continuar com Discord', footer: 'Cloud',
   logo: '', banner: '', backgroundImage: '', loadingBackgroundImage: '',
+  loadingTransparent: true, loadingSpeed: 6, loadingOverlay: 55, loadingPosition: 'center',
   loadingTitle: 'Conectando com segurança',
   loadingDescription: 'Estamos preparando sua autorização no Discord.',
   success: 'Verificação concluída.',
@@ -88,7 +89,7 @@ function validImage(value: unknown) {
 }
 function cleanTheme(input: any) {
   const source = input && typeof input === 'object' ? input : {};
-  const result: Record<string, string | number> = { ...defaults };
+  const result: Record<string, string | number | boolean> = { ...defaults };
   for (const key of ['name', 'title', 'description', 'button', 'footer', 'success', 'expired', 'loadingTitle', 'loadingDescription']) {
     if (typeof source[key] === 'string') result[key] = source[key].trim().slice(0, ['description', 'loadingDescription'].includes(key) ? 500 : 120);
   }
@@ -98,6 +99,9 @@ function cleanTheme(input: any) {
   for (const key of ['logo', 'banner', 'backgroundImage', 'loadingBackgroundImage']) if (source[key]) result[key] = validImage(source[key]);
   if (Number.isInteger(source.radius)) result.radius = Math.min(32, Math.max(4, source.radius));
   if (['valtrex', 'dark', 'light', 'minimal', 'custom'].includes(source.preset)) result.preset = source.preset;
+  if (typeof source.loadingTransparent === 'boolean') result.loadingTransparent = source.loadingTransparent;
+  for (const [key,min,max] of [['loadingSpeed',3,12],['loadingOverlay',0,90]] as const) if(Number.isFinite(source[key])) result[key]=Math.max(min,Math.min(max,source[key]));
+  if(['center','top','bottom'].includes(source.loadingPosition))result.loadingPosition=source.loadingPosition;
   return result;
 }
 async function log(tenantId: string, event: string, detail: Record<string, string | number | boolean> = {}) {
@@ -560,17 +564,17 @@ async function portal(req: Request, path: string) {
     await db.from('valtrex_portal_sessions').delete().eq('session_hash', session.session_hash);
     return json({ ok: true }, 200, { 'set-cookie': 'vtx_portal=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Lax' });
   }
-  const match = path.match(/^apps\/(\d{15,22})\/(config|preview|theme\/reset|gifts(?:\/[0-9a-f-]{36})?|logs)$/);
+  if (path.startsWith('notifications')) return portalNotices(req,path,session.discord_user_id);
+  const match = path.match(/^apps\/(\d{15,22})\/(config|preview|theme\/reset|gifts(?:\/[0-9a-f-]{36})?|logs|products)$/);
   if (!match) return json({ error: 'Rota não encontrada.' }, 404);
   const { data: tenant } = await db.from('valtrex_tenants').select('*').eq('id', match[1])
     .eq('owner_user_id', session.discord_user_id).maybeSingle();
   if (!tenant) return json({ error: 'Aplicação não encontrada.' }, 404);
+  if(match[2]==='products') return productPortal(req,match[2],tenant);
   return admin(req, match[2], tenant);
 }
 
-async function managerSync(req: Request) {
-  if (req.method !== 'POST') return json({ error: 'Método inválido.' }, 405);
-  if (!(await limit(req, 'manager_sync', 30))) return json({ error: 'Aguarde antes de sincronizar novamente.' }, 429);
+async function managerIdentity(req: Request) {
   const token = (req.headers.get('authorization') || '').match(/^Bot ([A-Za-z0-9._-]{40,200})$/)?.[1];
   if (!token) return json({ error: 'Acesso negado.' }, 401);
   const managerId = Deno.env.get('VALTREX_MANAGER_BOT_ID') || PORTAL_CLIENT_ID;
@@ -582,6 +586,13 @@ async function managerSync(req: Request) {
     const identity = await response.json();
     if (identity.bot !== true || identity.id !== managerId) return json({ error: 'Aplicação não autorizada.' }, 403);
   } catch { return json({ error: 'Não foi possível validar o Manager no Discord.' }, 503); }
+  return null;
+}
+
+async function managerSync(req: Request) {
+  if (req.method !== 'POST') return json({ error: 'Método inválido.' }, 405);
+  if (!(await limit(req, 'manager_sync', 30))) return json({ error: 'Aguarde antes de sincronizar novamente.' }, 429);
+  const denied = await managerIdentity(req); if(denied) return denied;
   const input = await body(req, 180000);
   if (!Array.isArray(input.apps) || input.apps.length > 500) return json({ error: 'Lista de aplicações inválida.' }, 400);
   const rows = input.apps.map((app: any) => ({
@@ -631,6 +642,7 @@ async function publicCatalog() {
 async function bot(req: Request, path: string) {
   const tenant = await tenantAuth(req);
   if (!tenant) return json({ error: 'Acesso negado.' }, 401);
+  if (path.startsWith('products')) return productBridge(req,path,tenant);
   if (path === 'oauth-link' && req.method === 'POST') {
     if (!(await limit(req, 'generator_oauth_link', 120))) return json({ error: 'Aguarde para criar outro link.' }, 429);
     const input = await body(req);
@@ -771,6 +783,138 @@ async function bot(req: Request, path: string) {
   return json({ error: 'Rota não encontrada.' }, 404);
 }
 
+// Workspace bridge: snapshots contain public catalog metadata only; never stock contents.
+function cleanProduct(input: any) {
+  if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.length > 100 ||
+      typeof input.description !== 'string' || input.description.length > 2000 ||
+      !['manual','automatic'].includes(input.delivery)) throw new Error('Dados do produto inválidos.');
+  return { name: input.name.trim(), description: input.description.trim(), delivery: input.delivery };
+}
+function publicLink(value: any) {
+  if (!value) return null;
+  if (typeof value !== 'string' || value.length > 500) throw new Error('Link inválido.');
+  const u = new URL(value);
+  if (u.protocol !== 'https:' || u.username || u.password || !u.hostname.includes('.')) throw new Error('Use um link HTTPS.');
+  return u.toString();
+}
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+async function productPortal(req: Request, path: string, tenant: any) {
+  const { data: catalog, error } = await db.from('valtrex_product_catalogs').select('*').eq('tenant_id', tenant.id).maybeSingle();
+  if (error) return json({ error: 'Catálogo indisponível.' }, 503);
+  if (req.method === 'GET' && path === 'products') {
+    const { data: commands, error: commandError } = await db.from('valtrex_product_commands')
+      .select('id,product_id,action,payload,state,detail,created_at,completed_at').eq('tenant_id',tenant.id).order('created_at',{ascending:false}).limit(100);
+    if (commandError) return json({ error: 'Não foi possível consultar a sincronização.' },503);
+    return json({ products: catalog?.products || [], commands: commands || [], seenAt: catalog?.seen_at || null, bridgeVersion: catalog?.bridge_version || null });
+  }
+  if (req.method === 'POST' && path === 'products') {
+    if (!(await limit(req,'product_write',40))) return json({error:'Aguarde antes de salvar outro produto.'},429);
+    const input = await body(req);
+    let payload; try { payload = cleanProduct(input); } catch { return json({error:'Informe nome, descrição e tipo de entrega válidos.'},400); }
+    const creating = !input.productId;
+    const productId = creating ? `cloud_${crypto.randomUUID().replaceAll('-','')}` : String(input.productId);
+    const existing = (catalog?.products || []).find((p:any)=>p.id === productId);
+    if (!creating && (!existing || existing.revision !== input.baseRevision)) return json({error:'O produto mudou. Atualize o catálogo antes de editar.'},409);
+    if (creating && (catalog?.products || []).length >= 500) return json({error:'Limite de 500 produtos no catálogo web.'},409);
+    const {data: command, error: insertError} = await db.from('valtrex_product_commands').insert({tenant_id:tenant.id,product_id:productId,
+      action:creating?'create':'edit',payload,base_revision:creating?null:existing.revision}).select('id,state').single();
+    if (insertError) return json({error:insertError.code==='23505'?'Já existe uma alteração pendente para este produto.':'Não foi possível salvar a solicitação.'},insertError.code==='23505'?409:503);
+    return json({command, pending:true},202);
+  }
+  const cancelled = path.match(/^products\/commands\/([0-9a-f-]{36})\/cancel$/);
+  if (cancelled && uuidPattern.test(cancelled[1]) && req.method==='POST') {
+    // A sent command can already be executing; don't claim that cancelling guarantees reversal.
+    return json({error:'A alteração já foi enviada ao bot. Aguarde a confirmação antes de editar novamente.'},409);
+  }
+  return json({error:'Método inválido.'},405);
+}
+async function productBridge(req:Request, path:string, tenant:any) {
+  if (!(await limit(req,'products_bridge',240))) return json({error:'Aguarde antes de sincronizar.'},429);
+  if (path==='products' && req.method==='GET') {
+    const {data,error}=await db.from('valtrex_product_commands').select('id,product_id,action,payload,base_revision')
+      .eq('tenant_id',tenant.id).eq('state','pending').order('created_at',{ascending:true}).limit(25);
+    return error?json({error:'Fila indisponível.'},503):json({commands:data||[]});
+  }
+  if (path==='products/snapshot' && req.method==='POST') {
+    const input=await body(req,1_500_000);
+    if (!Array.isArray(input.products)||input.products.length>500) return json({error:'Catálogo inválido.'},400);
+    let products;
+    try { products=input.products.map((p:any)=>{
+      if(typeof p.id!=='string'||!p.id||p.id.length>150||!(/^[0-9a-f]{64}$/.test(p.revision))) throw new Error();
+      return {id:p.id,...cleanProduct(p),revision:p.revision,options:Number.isInteger(p.options)?Math.min(10000,Math.max(0,p.options)):0};
+    }); } catch {return json({error:'Produto inválido.'},400);}
+    if(new Set(products.map((p:any)=>p.id)).size!==products.length)return json({error:'Produtos duplicados.'},400);
+    const {error}=await db.from('valtrex_product_catalogs').upsert({tenant_id:tenant.id,products,seen_at:new Date().toISOString(),bridge_version:1});
+    return error?json({error:'Não foi possível sincronizar.'},503):json({ok:true});
+  }
+  if(path==='products/result' && req.method==='POST') {
+    const input=await body(req);
+    if(!uuidPattern.test(input.id)||!['applied','conflict','failed'].includes(input.state))return json({error:'Resultado inválido.'},400);
+    const {error}=await db.from('valtrex_product_commands').update({state:input.state,
+      detail:input.state==='applied'?'Confirmado pelo bot.':input.state==='conflict'?'Produto alterado no Discord. Atualize e tente novamente.':'O bot não conseguiu aplicar esta alteração.',completed_at:new Date().toISOString()})
+      .eq('tenant_id',tenant.id).eq('id',input.id).eq('state','pending');
+    return error?json({error:'Resultado não salvo.'},503):json({ok:true});
+  }
+  return json({error:'Método inválido.'},405);
+}
+async function portalNotices(req:Request,path:string,userId:string) {
+  const now=new Date().toISOString();
+  if(path==='notifications'&&req.method==='GET') {
+    const [{data,error},{data:reads,error:readError}]=await Promise.all([
+      db.from('valtrex_site_notices').select('id,title,message,link,created_at,target_user_id').eq('archived',false)
+        .gt('expires_at',now).or(`target_user_id.is.null,target_user_id.eq.${userId}`).order('created_at',{ascending:false}).limit(50),
+      db.from('valtrex_notice_reads').select('notice_id').eq('user_id',userId).order('read_at',{ascending:false}).limit(1000)
+    ]);
+    if(error||readError)return json({error:'Avisos indisponíveis.'},503);
+    return json({notifications:(data||[]).map(n=>({id:n.id,title:n.title,message:n.message,link:n.link,createdAt:n.created_at,read:(reads||[]).some(r=>r.notice_id===n.id)}))});
+  }
+  const match=path.match(/^notifications\/([0-9a-f-]{36})\/read$/);
+  if(match&&uuidPattern.test(match[1])&&req.method==='POST') {
+    const {data}=await db.from('valtrex_site_notices').select('id').eq('id',match[1]).eq('archived',false).gt('expires_at',now)
+      .or(`target_user_id.is.null,target_user_id.eq.${userId}`).maybeSingle();
+    if(!data)return json({error:'Aviso não encontrado.'},404);
+    const {error}=await db.from('valtrex_notice_reads').upsert({notice_id:data.id,user_id:userId});
+    return error?json({error:'Não foi possível marcar o aviso.'},503):json({ok:true});
+  }
+  return json({error:'Rota não encontrada.'},404);
+}
+async function managerSite(req:Request,path:string) {
+  if(!(await limit(req,'manager_site',30)))return json({error:'Aguarde antes de continuar.'},429);
+  const denied=await managerIdentity(req); if(denied)return denied;
+  if(path==='notifications'&&req.method==='GET') {
+    const {data,error}=await db.from('valtrex_site_notices').select('id,title,message,link,target_user_id,created_at,expires_at,archived').order('created_at',{ascending:false}).limit(30);
+    return error?json({error:'Avisos indisponíveis.'},503):json({notifications:data||[]});
+  }
+  if(path==='notifications'&&req.method==='POST') {
+    const input=await body(req);
+    if(typeof input.title!=='string'||!input.title.trim()||input.title.length>100||typeof input.message!=='string'||!input.message.trim()||input.message.length>1500||
+      (input.targetUserId&&!validId(input.targetUserId))||!Number.isInteger(input.days)||input.days<1||input.days>365)return json({error:'Aviso inválido.'},400);
+    let link;try{link=publicLink(input.link);}catch{return json({error:'Link inválido.'},400);}
+    const {data,error}=await db.from('valtrex_site_notices').insert({title:input.title.trim(),message:input.message.trim(),link,target_user_id:input.targetUserId||null,expires_at:new Date(Date.now()+input.days*86400000).toISOString()}).select('id').single();
+    return error?json({error:'Aviso não publicado.'},503):json({id:data.id},201);
+  }
+  if(path==='notifications/archive'&&req.method==='POST') {
+    const input=await body(req);if(!uuidPattern.test(input.id))return json({error:'ID inválido.'},400);
+    const {data,error}=await db.from('valtrex_site_notices').update({archived:true}).eq('id',input.id).select('id').maybeSingle();
+    return error?json({error:'Não foi possível arquivar.'},503):data?json({ok:true}):json({error:'Aviso não encontrado.'},404);
+  }
+  if(path==='auth'&&req.method==='POST') {
+    const input=await body(req);
+    if(!validId(input.applicationId)||typeof input.clientSecret!=='string'||!input.clientSecret.trim()||input.clientSecret.length>300)return json({error:'Credenciais inválidas.'},400);
+    const {data:tenant}=await db.from('valtrex_tenants').select('id').eq('id',input.applicationId).maybeSingle();
+    if(!tenant)return json({error:'Vincule esta aplicação ao Cloud pelo bot primeiro.'},404);
+    // Validate the client pair with Discord before replacing a working secret.
+    let validation;
+    try { validation=await fetch('https://discord.com/api/v10/oauth2/token',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({grant_type:'client_credentials',scope:'identify',client_id:input.applicationId,client_secret:input.clientSecret.trim()}),signal:AbortSignal.timeout(8000)}); }
+    catch{return json({error:'Não foi possível validar as credenciais no Discord.'},503);}
+    if(!validation.ok)return json({error:'O Discord recusou o Client ID ou Client Secret.'},400);
+    const {error}=await db.from('valtrex_tenants').update({client_id:input.applicationId,client_secret_cipher:await seal(input.clientSecret.trim()),updated_at:new Date().toISOString()}).eq('id',tenant.id);
+    return error?json({error:'Credencial não salva.'},503):json({ok:true,redirectUri:CALLBACK,environmentOverride:input.applicationId===PORTAL_CLIENT_ID&&!!Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET')});
+  }
+  return json({error:'Rota não encontrada.'},404);
+}
+
 Deno.serve(async req => {
   try {
     const url = new URL(req.url);
@@ -794,6 +938,7 @@ Deno.serve(async req => {
     if (portalAuth && req.method === 'GET') return await start(req, portalAuth[1], 'portal');
     if (path === 'auth/portal' && req.method === 'GET') return await startPortal(req);
     if (path === 'auth/discord/callback' && req.method === 'GET') return await callback(req, url);
+    if (path.startsWith('manager/site/')) return await managerSite(req,path.slice(13));
     if (path === 'manager/sync') return await managerSync(req);
     if (path.startsWith('portal/')) return await portal(req, path.slice(7));
     if (path.startsWith('admin/')) return await admin(req, path.slice(6));

@@ -12,6 +12,7 @@ const DEFAULT_THEME = {
   name: BRAND, title: 'Verifique sua conta', description: 'Conecte sua conta Discord para concluir a verificação.',
   primary: '#f4f4f5', secondary: '#d4d4d8', text: '#fafafa', background: '#09090b', card: '#121214',
   border: '#303034', radius: 22, button: 'Continuar com Discord', footer: BRAND,
+  loadingTransparent: true, loadingSpeed: 6, loadingOverlay: 55, loadingPosition: 'center',
   loadingTitle: 'Conectando com segurança', loadingDescription: 'Estamos preparando sua autorização no Discord.',
 };
 function normalizeTheme(value) {
@@ -57,17 +58,18 @@ function DiscordIcon() {
 function ShieldIcon() { return <svg width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>; }
 function Brand({ theme = DEFAULT_THEME }) { return <div className="brand"><span className="brand-mark"><Icon name="cloud" size={24}/></span><span>{displayName(theme.name)}<small>DISCORD · WORKSPACE</small></span></div>; }
 
-function Shell({ children, theme = DEFAULT_THEME }) {
+function Shell({ children, theme = DEFAULT_THEME, loading = false }) {
   const css = { '--primary': theme.primary, '--secondary': readableColor(theme.secondary, theme.card),
     '--text': readableColor(theme.text, theme.card), '--button-text': readableColor('#ffffff', theme.primary),
     '--muted-text': readableColor('#a8a9b9', theme.card),
     '--outside-text': readableColor('#a8a9b9', theme.background),
     '--background': theme.background, '--card': theme.card, '--border': theme.border,
     '--radius': `${theme.radius || 22}px`, '--wallpaper': theme.backgroundImage ? `url("${theme.backgroundImage}")` : 'none',
-    '--overlay': luminance(theme.background) > 0.6
+    '--loading-speed': `${theme.loadingSpeed||6}s`, '--loading-position':theme.loadingPosition||'center',
+    '--overlay': loading && theme.backgroundImage ? `linear-gradient(rgba(0,0,0,${(theme.loadingOverlay??55)/100}),rgba(0,0,0,${(theme.loadingOverlay??55)/100}))` : luminance(theme.background) > 0.6
       ? 'linear-gradient(rgba(255,255,255,.15),rgba(255,255,255,.22))'
       : 'linear-gradient(180deg,rgba(5,6,10,.4),rgba(5,6,10,.8))' };
-  return <div className="app" style={css}><div className="aurora aurora-a"/><div className="aurora aurora-b"/>
+  return <div className={`app ${loading?'verification-loading':''}`} style={css}><div className="aurora aurora-a"/><div className="aurora aurora-b"/>
     <header className="topbar"><Brand theme={theme}/><span className="secure-label"><span className="secure-dot"/> Conexão segura</span></header>
     <main>{children}</main><footer>{displayName(theme.footer)} <span>·</span> OAuth2 oficial do Discord</footer>
   </div>;
@@ -102,7 +104,7 @@ function AccessPage({ token, kind = 'backup' }) {
         <div className="steps"><span className="step-number">01</span><div><strong>Entre pelo Discord</strong><p>Você verá as permissões no domínio oficial discord.com.</p></div></div>
         <div className="steps"><span className="step-number">02</span><div><strong>{verify ? 'Confirme sua conta' : 'Escolha o servidor de destino'}</strong><p>{kind === 'verify' ? 'A loja poderá conceder o cargo configurado. Você também autoriza a recuperação da comunidade via guilds.join.' : state.kind === 'verify' ? 'Este link antigo confirma sua identidade com identify e pode conceder o cargo configurado.' : 'Depois do login, adicione o bot e informe quantos membros autorizados deseja recuperar.'}</p></div></div>
         {kind === 'verify' && <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}/><span>Concordo que esta loja guarde minha autorização OAuth protegida por até 90 dias para me incluir em um servidor de recuperação se necessário. Posso revogar o acesso em <strong>Discord › Aplicativos autorizados</strong>.</span></label>}
-        <a className={`discord-button ${kind === 'verify' && !consent ? 'disabled-link' : ''}`} aria-disabled={kind === 'verify' && !consent} href={`/api/auth/${kind === 'verify' ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (kind === 'verify' && !consent) { event.preventDefault(); return; } const target = event.currentTarget.href; event.preventDefault(); setLeaving(true); window.setTimeout(() => window.location.assign(target), 650); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<Icon name="external" size={16}/></a>
+        <a className={`discord-button ${kind === 'verify' && !consent ? 'disabled-link' : ''}`} aria-disabled={kind === 'verify' && !consent} href={`/api/auth/${kind === 'verify' ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (kind === 'verify' && !consent) { event.preventDefault(); return; } const target = event.currentTarget.href; event.preventDefault(); setLeaving(true); window.setTimeout(() => window.location.assign(target), window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1000); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<Icon name="external" size={16}/></a>
         <p className="privacy">{kind === 'verify' ? 'Sua autorização é específica desta loja. A recuperação usa somente membros que consentiram.' : state.kind === 'verify' ? 'Este Gift antigo verifica sua conta apenas com identify. Para participar de recuperação, use o novo botão Verificar da loja.' : 'Somente o proprietário da aplicação pode iniciar a recuperação. Nenhum membro sem autorização será transferido.'} Nunca pedimos sua senha.</p>
       </div>
     </article>
@@ -112,7 +114,7 @@ function AccessPage({ token, kind = 'backup' }) {
 
 function LoadingPage({ text = 'Verificando sua conta…', theme = DEFAULT_THEME, linkValidated = false }) {
   const loadingTheme = { ...theme, backgroundImage: theme.loadingBackgroundImage || theme.backgroundImage };
-  return <Shell theme={loadingTheme}><section className="card status-card loading-card" role="status" aria-live="polite">
+  return <Shell theme={loadingTheme} loading><section className={`card status-card loading-card ${theme.loadingTransparent!==false?'loading-transparent':''}`} role="status" aria-live="polite">
     <div className="loading-orbit"><ShieldIcon/><i/><i/></div>
     <span className="eyebrow">CLOUD · CONEXÃO SEGURA</span><h1>{theme.loadingTitle || text}</h1>
     <p className="lead">{theme.loadingDescription || text}</p>
@@ -219,6 +221,7 @@ function PreviewPage({ parts }) {
   if (state.loading) return <Shell><section className="card status-card" role="status">Carregando preview...</section></Shell>;
   if (state.status !== 'preview') return <StatusPage status="invalid"/>;
   const theme = normalizeTheme(state.theme);
+  if(new URLSearchParams(window.location.search).get('loading')==='1') return <LoadingPage theme={theme} text="Prévia da transição. Nenhuma autorização será iniciada." linkValidated/>;
   return <Shell theme={theme}><section className="card home-card"><span className="eyebrow">PRÉ-VISUALIZAÇÃO · NÃO CONSOME GIFT</span>
     <h1>{theme.title}</h1><p className="lead">{theme.description}</p>
     {theme.banner && <img className="preview-banner" src={theme.banner} alt="Banner da página" onError={e => { e.currentTarget.hidden = true; }}/>}

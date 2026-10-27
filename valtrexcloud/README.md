@@ -65,3 +65,13 @@ npm test
 ```
 
 O fluxo OAuth real só pode ser verificado após cadastrar o Client Secret e a Redirect URI no Discord Developer Portal. Um teste de ingresso real requer ao menos um membro com consentimento, um servidor de destino administrado pelo proprietário e o bot instalado nesse servidor.
+
+## Cloud R65 — portal atualizado
+
+O nome público padrão é **Cloud**. Para trocar por outra marca, configure `VITE_PUBLIC_BRAND` e faça um novo build. As URLs do OAuth, os nomes das tabelas e o endpoint da Edge Function conservam os identificadores existentes para manter compatibilidade. A loja SystemBux é um projeto separado.
+
+A interface usa grafite e verde-água, com opções locais de cor (verde-água, azul ou âmbar), densidade, exibição em cards/lista, avisos e redução de movimento. Preferências ficam somente neste navegador, sem credenciais. A página de aplicações oferece busca por nome/ID, filtro de plano e ordenação; a atividade permite pesquisar eventos, filtrar por data e exportar somente data/evento em CSV. A aparência pública de cada aplicação tem paletas e ajuste de arredondamento, salvos pelo backend existente.
+
+O painel mostra apenas dados retornados pela sessão autorizada. O controle de processo e a renovação dos bots continuam na central do Manager no Discord. O login, a autorização OAuth e o consentimento usam os endpoints existentes. Não há acesso administrativo por dados inventados.
+
+Validação: `npm test` compila e testa o portal e o fluxo OAuth. A verificação no navegador usou respostas locais simuladas para testar os dez menus, filtros, preferências persistentes, exportação CSV, gravação com CSRF, Gifts, saída com falha, desktop e celular. Isso não substitui a autorização real de uma conta Discord em produção.

@@ -565,11 +565,13 @@ async function portal(req: Request, path: string) {
     return json({ ok: true }, 200, { 'set-cookie': 'vtx_portal=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Lax' });
   }
   if (path.startsWith('notifications')) return portalNotices(req,path,session.discord_user_id);
-  const match = path.match(/^apps\/(\d{15,22})\/(config|preview|theme\/reset|gifts(?:\/[0-9a-f-]{36})?|logs|products)$/);
+  const match = path.match(/^apps\/(\d{15,22})\/(config|preview|theme\/reset|gifts(?:\/[0-9a-f-]{36})?|logs|products|finance|chat(?:\/read)?)$/);
   if (!match) return json({ error: 'Rota não encontrada.' }, 404);
   const { data: tenant } = await db.from('valtrex_tenants').select('*').eq('id', match[1])
     .eq('owner_user_id', session.discord_user_id).maybeSingle();
   if (!tenant) return json({ error: 'Aplicação não encontrada.' }, 404);
+  if(match[2]==='finance')return financePortal(req,tenant);
+  if(match[2].startsWith('chat'))return supportPortal(req,match[2],tenant,session.discord_user_id);
   if(match[2]==='products') return productPortal(req,match[2],tenant);
   return admin(req, match[2], tenant);
 }
@@ -642,6 +644,7 @@ async function publicCatalog() {
 async function bot(req: Request, path: string) {
   const tenant = await tenantAuth(req);
   if (!tenant) return json({ error: 'Acesso negado.' }, 401);
+  if(path==='finance')return financeBridge(req,tenant);
   if (path.startsWith('products')) return productBridge(req,path,tenant);
   if (path === 'oauth-link' && req.method === 'POST') {
     if (!(await limit(req, 'generator_oauth_link', 120))) return json({ error: 'Aguarde para criar outro link.' }, 429);
@@ -881,6 +884,7 @@ async function portalNotices(req:Request,path:string,userId:string) {
 async function managerSite(req:Request,path:string) {
   if(!(await limit(req,'manager_site',30)))return json({error:'Aguarde antes de continuar.'},429);
   const denied=await managerIdentity(req); if(denied)return denied;
+  if(path.startsWith('support'))return managerSupport(req,path);
   if(path==='notifications'&&req.method==='GET') {
     const {data,error}=await db.from('valtrex_site_notices').select('id,title,message,link,target_user_id,created_at,expires_at,archived').order('created_at',{ascending:false}).limit(30);
     return error?json({error:'Avisos indisponíveis.'},503):json({notifications:data||[]});
@@ -913,6 +917,94 @@ async function managerSite(req:Request,path:string) {
     return error?json({error:'Credencial não salva.'},503):json({ok:true,redirectUri:CALLBACK,environmentOverride:input.applicationId===PORTAL_CLIENT_ID&&!!Deno.env.get('VALTREX_PORTAL_CLIENT_SECRET')});
   }
   return json({error:'Rota não encontrada.'},404);
+}
+
+function financePeriod(req:Request) {
+ const params=new URL(req.url).searchParams,zone=params.get('zone')==='UTC'?'UTC':'America/Sao_Paulo';
+ const today=new Date().toLocaleDateString('en-CA',{timeZone:zone});
+ const until=params.get('until')||today,from=params.get('from')||new Date(Date.parse(today+'T12:00:00Z')-29*86400000).toISOString().slice(0,10);
+ const day=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(value+'T12:00:00Z').toISOString().slice(0,10)===value;
+ if(!day(from)||!day(until)||from>until||Date.parse(until)-Date.parse(from)>365*86400000)throw new Error('Período inválido. Escolha até 366 dias.');
+ const offset=zone==='UTC'?'Z':'-03:00',start=new Date(from+'T00:00:00'+offset),end=new Date(Date.parse(until+'T00:00:00'+offset)+86400000);
+ return {from,until,zone,start:start.toISOString(),end:end.toISOString()};
+}
+async function financePortal(req:Request,tenant:any) {
+ if(req.method!=='GET')return json({error:'Método inválido.'},405);
+ let period;try{period=financePeriod(req);}catch{return json({error:'Período inválido. Escolha até 366 dias.'},400);}
+ const [{data:report,error},{data:sync,error:syncError}]=await Promise.all([
+ db.rpc('valtrex_finance_report',{p_tenant:tenant.id,p_from:period.start,p_until:period.end,p_zone:period.zone}),
+ db.from('valtrex_finance_sync').select('seen_at,source_count,remaining,skipped,version').eq('tenant_id',tenant.id).maybeSingle()]);
+ return error||syncError?json({error:'Rendimentos indisponíveis. Tente novamente.'},503):json({period,report,sync:sync||null});
+}
+async function financeBridge(req:Request,tenant:any) {
+ if(req.method!=='POST')return json({error:'Método inválido.'},405);
+ if(!(await limit(req,`finance_sync:${tenant.id}`,12)))return json({error:'Aguarde antes de sincronizar.'},429);
+ const input=await body(req,180000);
+ if(!Array.isArray(input.entries)||input.entries.length>100||!Number.isInteger(input.sourceCount)||input.sourceCount<0||input.sourceCount>10000000||!Number.isInteger(input.remaining)||input.remaining<0||input.remaining>input.sourceCount||!Number.isInteger(input.skipped)||input.skipped<0)return json({error:'Lote inválido.'},400);
+ let rows;try{rows=input.entries.map((e:any)=>{
+ const text=(v:any,n:number,required=true)=>{if(typeof v!=='string'||v.length>n||(required&&!v.trim()))throw new Error();return v;};
+ const entry_id=text(e.entryId,128),order_ref=text(e.orderRef,128),product_id=text(e.productId,150,false),product_name=text(e.productName,100);
+ if(!Number.isInteger(e.quantity)||e.quantity<1||e.quantity>1000000||![e.amountCents,e.discountCents].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1000000000)||!['confirmed','manual','unclassified','refunded','cancelled'].includes(e.state)||!['delivered','pending','unknown'].includes(e.delivery)||!/^\d{4}-\d{2}-\d{2}T/.test(e.occurredAt)||!Number.isFinite(Date.parse(e.occurredAt))||Date.parse(e.occurredAt)>Date.now()+86400000||Date.parse(e.occurredAt)<946684800000)throw new Error();
+ return {tenant_id:tenant.id,entry_id,order_ref,product_id,product_name,quantity:e.quantity,amount_cents:e.amountCents,discount_cents:e.discountCents,state:e.state,delivery:e.delivery,payment_method:text(e.paymentMethod,40),occurred_at:new Date(e.occurredAt).toISOString(),synced_at:new Date().toISOString()};
+ });}catch{return json({error:'Registro financeiro inválido.'},400);}
+ if(new Set(rows.map((r:any)=>r.entry_id)).size!==rows.length)return json({error:'Registros duplicados no lote.'},400);
+ if(rows.length){const {error}=await db.from('valtrex_finance_entries').upsert(rows,{onConflict:'tenant_id,entry_id'});if(error)return json({error:'Lote não confirmado.'},503);}
+ const {error}=await db.from('valtrex_finance_sync').upsert({tenant_id:tenant.id,source_count:input.sourceCount,remaining:input.remaining,skipped:input.skipped,seen_at:new Date().toISOString(),version:1});
+ return error?json({error:'Lote salvo, confirmação pendente. Reenvie o mesmo lote.'},503):json({ok:true,accepted:rows.length});
+}
+async function chatData(thread:any,before='') {
+ if(!thread)return {thread:null,messages:[],hasOlder:false};
+ let query=db.from('valtrex_support_messages').select('id,author_role,message,created_at').eq('thread_id',thread.id);
+ if(before){if(!/^\d{1,16}$/.test(before)||!Number.isSafeInteger(Number(before)))throw new Error('Invalid cursor');query=query.lt('id',before);}
+ const {data,error}=await query.order('id',{ascending:false}).limit(101);
+ if(error)throw new Error('Chat unavailable');
+ return {thread:{id:thread.id,status:thread.status,topic:thread.topic,updatedAt:thread.updated_at,ownerReadAt:thread.owner_read_at,supportReadAt:thread.support_read_at},messages:(data||[]).slice(0,100).reverse(),hasOlder:(data||[]).length>100};
+}
+async function supportPortal(req:Request,path:string,tenant:any,userId:string) {
+ const {data:thread,error}=await db.from('valtrex_support_threads').select('*').eq('tenant_id',tenant.id).eq('owner_id',userId).maybeSingle();
+ if(error)return json({error:'Atendimento indisponível.'},503);
+ if(path==='chat'&&req.method==='GET'){const before=new URL(req.url).searchParams.get('before')||'';if(before&&(!/^\d{1,16}$/.test(before)||!Number.isSafeInteger(Number(before))))return json({error:'Página inválida.'},400);return json(await chatData(thread,before));}
+ if(path==='chat/read'&&req.method==='POST'){
+ const input=await body(req);if(typeof input.readUntil!=='string'||!Number.isFinite(Date.parse(input.readUntil))||Date.parse(input.readUntil)>Date.now()+1000)return json({error:'Leitura inválida.'},400);
+ if(thread){const {error}=await db.from('valtrex_support_threads').update({owner_read_at:input.readUntil}).eq('id',thread.id).eq('owner_id',userId);if(error)return json({error:'Leitura não confirmada.'},503);}
+ return json({ok:true});
+ }
+ if(path==='chat'&&req.method==='POST') {
+ if(!(await limit(req,`chat_message:${tenant.id}:${userId}`,20)))return json({error:'Aguarde antes de enviar outra mensagem.'},429);
+ const input=await body(req);
+ if(typeof input.message!=='string'||!input.message.trim()||input.message.length>2000||!uuidPattern.test(input.clientId)||!['general','billing','technical'].includes(input.topic))return json({error:'Mensagem inválida.'},400);
+ const {data,error}=await db.rpc('valtrex_support_send',{p_tenant:tenant.id,p_owner:userId,p_actor:userId,p_role:'owner',p_message:input.message.trim(),p_client:input.clientId,p_topic:input.topic});
+ return error?json({error:'Mensagem não confirmada. Seu texto foi mantido para tentar novamente.'},503):json({ok:true,...data},201);
+ }
+ return json({error:'Método inválido.'},405);
+}
+async function managerSupport(req:Request,path:string) {
+ // managerSite already validates the Manager's Discord bot identity.
+ if(path==='support'&&req.method==='GET'){
+ const {data,error}=await db.from('valtrex_support_threads').select('id,tenant_id,owner_id,status,topic,updated_at,owner_sent_at,support_sent_at,support_read_at').order('updated_at',{ascending:false}).limit(50);
+ return error?json({error:'Atendimentos indisponíveis.'},503):json({threads:data||[]});
+ }
+ const match=path.match(/^support\/([0-9a-f-]{36})(?:\/(reply|close))?$/);
+ if(!match||!uuidPattern.test(match[1]))return json({error:'Atendimento não encontrado.'},404);
+ const {data:thread,error}=await db.from('valtrex_support_threads').select('*').eq('id',match[1]).maybeSingle();
+ if(error)return json({error:'Atendimento indisponível.'},503);
+ if(!thread)return json({error:'Atendimento não encontrado.'},404);
+ if(req.method==='GET'&&!match[2]){
+ const data=await chatData(thread);
+ if(data.messages.length)await db.from('valtrex_support_threads').update({support_read_at:data.messages.at(-1).created_at}).eq('id',thread.id);
+ return json({...data,tenantId:thread.tenant_id,ownerId:thread.owner_id});
+ }
+ if(req.method==='POST'&&match[2]==='reply'){
+ const input=await body(req);
+ if(!validId(input.actorId)||typeof input.message!=='string'||!input.message.trim()||input.message.length>2000||!uuidPattern.test(input.clientId))return json({error:'Resposta inválida.'},400);
+ const {data,error}=await db.rpc('valtrex_support_send',{p_tenant:thread.tenant_id,p_owner:thread.owner_id,p_actor:input.actorId,p_role:'support',p_message:input.message.trim(),p_client:input.clientId,p_topic:thread.topic});
+ return error?json({error:'Resposta não confirmada.'},503):json({ok:true,...data},201);
+ }
+ if(req.method==='POST'&&match[2]==='close'){
+ const {error}=await db.from('valtrex_support_threads').update({status:'closed',updated_at:new Date().toISOString()}).eq('id',thread.id);
+ return error?json({error:'Encerramento não confirmado.'},503):json({ok:true});
+ }
+ return json({error:'Método inválido.'},405);
 }
 
 Deno.serve(async req => {

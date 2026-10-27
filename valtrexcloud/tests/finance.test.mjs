@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {periodDates,trendDays,money,financeCsv} from '../src/finance.mjs';
+test('period boundaries respect timezone and inclusive days',()=>{const now=new Date('2026-10-27T01:00:00Z');assert.deepEqual(periodDates(7,now),{from:'2026-10-20',until:'2026-10-26',zone:'America/Sao_Paulo'});assert.equal(periodDates(7,now,'UTC').until,'2026-10-27');});
+test('daily chart fills missing days without inventing revenue',()=>{const r=trendDays('2026-10-01','2026-10-03',[{day:'2026-10-02',confirmed_cents:100}]);assert.equal(r.length,3);assert.equal(r[0].confirmed_cents,0);assert.equal(r[1].confirmed_cents,100);});
+test('CSV protects against spreadsheet formulas and keeps financial precision',()=>{const csv=financeCsv([{order_ref:'PED-A',occurred_at:'2026-10-01T00:00:00Z',product_name:'=HYPERLINK("bad")',quantity:2,amount_cents:1990,discount_cents:100,state:'manual',delivery:'unknown',payment_method:'pix'}]);assert.match(csv,/'=HYPERLINK/);assert.match(csv,/19\.90/);assert.ok(!csv.includes('user_id'));});
+test('BRL rendering does not show cents as currency units',()=>assert.match(money(1990),/19,90/));

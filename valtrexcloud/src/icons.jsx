@@ -1,6 +1,11 @@
 import React from 'react';
 
 const paths = {
+  revenue: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 15h4M16 13v4m-2-2h4"/></>,
+  finance: <><path d="M3 21h18M6 17v-5m6 5V8m6 9V3"/></>,
+  chart: <><path d="M3 3v18h18M6 15l5-5 4 3 6-7"/></>,
+  chat: <path d="M21 11a9 9 0 0 1-9 9H4l-3 2 2-6a9 9 0 1 1 18-5Z"/>,
+  send: <><path d="m22 2-7 20-4-9-9-4zM11 13 22 2"/></>,
   products: <><path d="m3 7 9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10M7 5l10 5"/></>,
   plus: <path d="M12 4v16M4 12h16"/>,
   edit: <><path d="m15 4 5 5M4 20l4-1L21 6l-5-5L3 14z"/></>,

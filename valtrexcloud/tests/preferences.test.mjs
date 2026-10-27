@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePreferences, readPreferences, filterApps, filterLogs, logsCsv, safeInvite } from '../src/preferences.mjs';
+import { normalizePreferences, readPreferences, filterApps, filterLogs, logsCsv, safeInvite, formatDate } from '../src/preferences.mjs';
 import { displayName } from '../src/branding.mjs';
 test('preferences have a limited schema and survive blocked or corrupt storage',()=>{
- assert.equal(normalizePreferences({palette:'__proto__',density:'tiny',token:'secret'}).palette,'mint');
+ assert.equal(normalizePreferences({theme:'__proto__',density:'tiny',token:'secret'}).theme,'dark');
  assert.equal('token' in normalizePreferences({token:'secret'}),false);
  assert.equal(readPreferences({getItem(){throw Error('blocked')}}).layout,'grid');
  assert.equal(readPreferences({getItem(){return '{broken'}}).sort,'name');
@@ -30,3 +30,9 @@ test('support links accept only HTTPS Discord invites',()=>{
 test('legacy public branding becomes Cloud without altering custom names',()=>{
  assert.equal(displayName('ValtrexCloud'),'Cloud');assert.equal(displayName('ValtrexApplications'),'Cloud');assert.equal(displayName('Minha Loja'),'Minha Loja');
 });
+
+test('favorites are bounded and legacy preferences migrate without retaining arbitrary data',()=>{
+ const input={favorites:['manager:123','manager:123','<script>',4,...Array.from({length:110},(_,i)=>`cloud:${i}`)],palette:'mint',hideIds:true,theme:'light'};
+ const value=normalizePreferences(input);assert.equal(value.theme,'light');assert.equal(value.hideIds,true);assert.equal(value.favorites.length,100);assert.ok(!value.favorites.includes('<script>'));assert.equal('palette' in value,false);
+});
+test('dates handle missing values and respect the selected timezone',()=>{assert.equal(formatDate(null),'Não informado');assert.equal(formatDate('invalid'),'Não informado');assert.match(formatDate('2026-10-27T10:30:00Z','UTC'),/10:30:00 UTC$/);});

@@ -1,14 +1,25 @@
-export const PALETTES = { mint: '#53dfb7', blue: '#83b9ff', amber: '#f4c879' };
-export const DEFAULT_PREFERENCES = { palette: 'mint', density: 'comfortable', layout: 'grid', sort: 'name', reducedMotion: false, expiryNotice: true };
+export const PUBLIC_PRESETS = {
+  dark: { primary: '#f5f5f5', secondary: '#d4d4d8', background: '#09090b', card: '#121214', border: '#303034', text: '#fafafa' },
+  light: { primary: '#171717', secondary: '#404040', background: '#f5f5f5', card: '#ffffff', border: '#d4d4d8', text: '#171717' },
+  contrast: { primary: '#ffffff', secondary: '#ffffff', background: '#000000', card: '#000000', border: '#ffffff', text: '#ffffff' },
+};
+export const DEFAULT_PREFERENCES = { theme: 'dark', density: 'comfortable', layout: 'grid', sort: 'name', reducedMotion: false, expiryNotice: true, hideIds: false, timezone: 'local', favorites: [] };
 export function normalizePreferences(input = {}) {
   if (!input || typeof input !== 'object') input = {};
   return {
-    palette: Object.hasOwn(PALETTES, input.palette) ? input.palette : 'mint',
+    theme: ['dark', 'light', 'system'].includes(input.theme) ? input.theme : 'dark',
     density: input.density === 'compact' ? 'compact' : 'comfortable',
     layout: input.layout === 'list' ? 'list' : 'grid',
     sort: ['name', 'expiry', 'status'].includes(input.sort) ? input.sort : 'name',
     reducedMotion: input.reducedMotion === true, expiryNotice: input.expiryNotice !== false,
+    hideIds: input.hideIds === true, timezone: input.timezone === 'UTC' ? 'UTC' : 'local',
+    favorites: Array.isArray(input.favorites) ? [...new Set(input.favorites.filter(id => typeof id === 'string' && /^[\w:-]{1,100}$/.test(id)))].slice(0, 100) : [],
   };
+}
+export function formatDate(value, timezone = 'local') {
+  const date = new Date(value);
+  if (!value || !Number.isFinite(date.getTime())) return 'Não informado';
+  return date.toLocaleString('pt-BR', timezone === 'UTC' ? { timeZone: 'UTC' } : undefined) + (timezone === 'UTC' ? ' UTC' : '');
 }
 export function readPreferences(storage) {
   try { return normalizePreferences(JSON.parse(storage.getItem('cloud.preferences.v1') || '{}')); }

@@ -4,20 +4,24 @@ import './style.css';
 import Dashboard from './dashboard.jsx';
 import Plans from './plans.jsx';
 import { BRAND, displayName } from './branding.mjs';
-import './cloud-modern.css';
+import './cloud.css';
+import Icon from './icons.jsx';
 import { LoginVisual } from './workspace-tools.jsx';
 
 const DEFAULT_THEME = {
   name: BRAND, title: 'Verifique sua conta', description: 'Conecte sua conta Discord para concluir a verificação.',
-  primary: '#53dfb7', secondary: '#8ee8d0', text: '#f6f5fb', background: '#0b1115', card: '#111c22',
-  border: '#2b3a41', radius: 22, button: 'Continuar com Discord', footer: BRAND,
+  primary: '#f4f4f5', secondary: '#d4d4d8', text: '#fafafa', background: '#09090b', card: '#121214',
+  border: '#303034', radius: 22, button: 'Continuar com Discord', footer: BRAND,
   loadingTitle: 'Conectando com segurança', loadingDescription: 'Estamos preparando sua autorização no Discord.',
 };
 function normalizeTheme(value) {
   const theme = { ...DEFAULT_THEME, ...(value || {}) };
   theme.name = displayName(theme.name); theme.footer = displayName(theme.footer);
-  if (theme.primary === '#7968f8') theme.primary = DEFAULT_THEME.primary;
-  if (theme.secondary === '#a99eff') theme.secondary = DEFAULT_THEME.secondary;
+  if (['#7968f8','#53dfb7'].includes(theme.primary)) theme.primary = DEFAULT_THEME.primary;
+  if (['#a99eff','#8ee8d0'].includes(theme.secondary)) theme.secondary = DEFAULT_THEME.secondary;
+  if (['#0b1115','#08090d'].includes(theme.background)) theme.background = DEFAULT_THEME.background;
+  if (['#111c22','#161821'].includes(theme.card)) theme.card = DEFAULT_THEME.card;
+  if (['#2b3a41','#393c4e'].includes(theme.border)) theme.border = DEFAULT_THEME.border;
   return theme;
 }
 const messages = {
@@ -51,7 +55,7 @@ function DiscordIcon() {
   return <svg width="22" height="18" viewBox="0 0 127.14 96.36" fill="currentColor" aria-hidden="true"><path d="M104.4 8.87A102.2 102.2 0 0 0 79.05.92a70.35 70.35 0 0 0-3.24 6.71 95.12 95.12 0 0 0-28.48 0A71.39 71.39 0 0 0 44.1.92 102.3 102.3 0 0 0 18.7 8.89C2.64 32.66-1.7 55.85.48 78.71a102.74 102.74 0 0 0 31.07 15.68c2.5-3.4 4.73-7 6.64-10.8a66.92 66.92 0 0 1-10.45-5.04c.88-.64 1.73-1.3 2.56-1.97 20.15 9.43 42 9.43 61.91 0 .83.68 1.68 1.34 2.56 1.98a66.28 66.28 0 0 1-10.47 5.06 87.25 87.25 0 0 0 6.64 10.79 102.35 102.35 0 0 0 31.09-15.67c2.58-26.5-4.41-49.48-18.22-69.83ZM42.45 64.67c-6.05 0-11.02-5.57-11.02-12.4s4.87-12.4 11.02-12.4c6.2 0 11.12 5.62 11.02 12.4 0 6.83-4.87 12.4-11.02 12.4Zm42.24 0c-6.05 0-11.02-5.57-11.02-12.4s4.87-12.4 11.02-12.4c6.2 0 11.12 5.62 11.02 12.4 0 6.83-4.87 12.4-11.02 12.4Z"/></svg>;
 }
 function ShieldIcon() { return <svg width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>; }
-function Brand({ theme = DEFAULT_THEME }) { return <div className="brand"><span className="brand-mark">☁</span><span>{displayName(theme.name)}<small>DISCORD · WORKSPACE</small></span></div>; }
+function Brand({ theme = DEFAULT_THEME }) { return <div className="brand"><span className="brand-mark"><Icon name="cloud" size={24}/></span><span>{displayName(theme.name)}<small>DISCORD · WORKSPACE</small></span></div>; }
 
 function Shell({ children, theme = DEFAULT_THEME }) {
   const css = { '--primary': theme.primary, '--secondary': readableColor(theme.secondary, theme.card),
@@ -90,7 +94,7 @@ function AccessPage({ token, kind = 'backup' }) {
     <article className="card gift-card">
       {(state.banner || theme.banner) ? <img className="banner" src={state.banner || theme.banner} alt="Banner da loja" onError={e => { e.currentTarget.hidden = true; }} /> : <div className="banner-gradient" aria-hidden="true"><span>{BRAND}<span className="accent"> / DISCORD</span></span></div>}
       <div className="card-body">
-        {theme.logo ? <img className="store-logo" src={theme.logo} alt={`Logo de ${state.store}`} onError={e => { e.currentTarget.hidden = true; }} /> : <div className="store-logo store-logo-fallback" aria-hidden="true">☁</div>}
+        {theme.logo ? <img className="store-logo" src={theme.logo} alt={`Logo de ${state.store}`} onError={e => { e.currentTarget.hidden = true; }} /> : <div className="store-logo store-logo-fallback" aria-hidden="true"><Icon name="cloud" size={27}/></div>}
         <div className="eyebrow"><ShieldIcon/> {kind === 'verify' ? 'VERIFICAÇÃO DO SERVIDOR' : state.kind === 'verify' ? 'GIFT DE VERIFICAÇÃO ANTIGO' : 'GIFT DE RECUPERAÇÃO'}</div>
         <h1>{kind === 'verify' ? theme.title : state.title || (verify ? theme.title : 'Proteja sua comunidade')}</h1>
         <p className="lead">{kind === 'verify' ? theme.description : state.description || (verify ? theme.description : 'Faça login para preparar a recuperação de membros que consentiram com esta finalidade.')}</p>
@@ -98,11 +102,11 @@ function AccessPage({ token, kind = 'backup' }) {
         <div className="steps"><span className="step-number">01</span><div><strong>Entre pelo Discord</strong><p>Você verá as permissões no domínio oficial discord.com.</p></div></div>
         <div className="steps"><span className="step-number">02</span><div><strong>{verify ? 'Confirme sua conta' : 'Escolha o servidor de destino'}</strong><p>{kind === 'verify' ? 'A loja poderá conceder o cargo configurado. Você também autoriza a recuperação da comunidade via guilds.join.' : state.kind === 'verify' ? 'Este link antigo confirma sua identidade com identify e pode conceder o cargo configurado.' : 'Depois do login, adicione o bot e informe quantos membros autorizados deseja recuperar.'}</p></div></div>
         {kind === 'verify' && <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}/><span>Concordo que esta loja guarde minha autorização OAuth protegida por até 90 dias para me incluir em um servidor de recuperação se necessário. Posso revogar o acesso em <strong>Discord › Aplicativos autorizados</strong>.</span></label>}
-        <a className={`discord-button ${kind === 'verify' && !consent ? 'disabled-link' : ''}`} aria-disabled={kind === 'verify' && !consent} href={`/api/auth/${kind === 'verify' ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (kind === 'verify' && !consent) { event.preventDefault(); return; } const target = event.currentTarget.href; event.preventDefault(); setLeaving(true); window.setTimeout(() => window.location.assign(target), 650); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<span aria-hidden="true">↗︎</span></a>
+        <a className={`discord-button ${kind === 'verify' && !consent ? 'disabled-link' : ''}`} aria-disabled={kind === 'verify' && !consent} href={`/api/auth/${kind === 'verify' ? 'verify' : 'start'}/${encodeURIComponent(token)}`} onClick={event => { if (kind === 'verify' && !consent) { event.preventDefault(); return; } const target = event.currentTarget.href; event.preventDefault(); setLeaving(true); window.setTimeout(() => window.location.assign(target), 650); }}><DiscordIcon/>{verify ? theme.button || 'Verificar com Discord' : 'Entrar com Discord'}<Icon name="external" size={16}/></a>
         <p className="privacy">{kind === 'verify' ? 'Sua autorização é específica desta loja. A recuperação usa somente membros que consentiram.' : state.kind === 'verify' ? 'Este Gift antigo verifica sua conta apenas com identify. Para participar de recuperação, use o novo botão Verificar da loja.' : 'Somente o proprietário da aplicação pode iniciar a recuperação. Nenhum membro sem autorização será transferido.'} Nunca pedimos sua senha.</p>
       </div>
     </article>
-    <p className="below-card"><span>◇</span> Verificação protegida para <strong>{state.store}</strong></p>
+    <p className="below-card"><Icon name="shield" size={15}/> Verificação protegida para <strong>{state.store}</strong></p>
   </Shell>;
 }
 
@@ -112,7 +116,7 @@ function LoadingPage({ text = 'Verificando sua conta…', theme = DEFAULT_THEME,
     <div className="loading-orbit"><ShieldIcon/><i/><i/></div>
     <span className="eyebrow">CLOUD · CONEXÃO SEGURA</span><h1>{theme.loadingTitle || text}</h1>
     <p className="lead">{theme.loadingDescription || text}</p>
-    <div className="loading-steps"><div className={linkValidated ? 'complete' : 'current'}><span>{linkValidated ? '✓' : '01'}</span><div><strong>Preparando seu link</strong><small>Verificando as informações da loja</small></div></div>
+    <div className="loading-steps"><div className={linkValidated ? 'complete' : 'current'}><span>{linkValidated ? <Icon name="check" size={15}/> : '01'}</span><div><strong>Preparando seu link</strong><small>Verificando as informações da loja</small></div></div>
       <div className={linkValidated ? 'current' : ''}><span>02</span><div><strong>Autorização no Discord</strong><small>Você confirma o acesso no site oficial</small></div></div>
       <div><span>03</span><div><strong>Conclusão</strong><small>O resultado aparecerá depois da autorização</small></div></div></div>
     <div className="loading-track"><span/></div>
@@ -182,11 +186,11 @@ function SetupPage({ token }) {
           <option value="">Selecione um servidor que você administra</option>{state.guilds?.map(g => <option key={g.id} value={g.id}>{g.name} · {g.id}</option>)}
         </select>
         <label htmlFor="guild-id">ID do servidor</label><input id="guild-id" value={guildId} onChange={e => setGuildId(e.target.value.trim())} readOnly={repeatMode} inputMode="numeric" pattern="[0-9]{15,22}" required placeholder="Cole o ID do servidor"/>
-        {invite && <a className="subtle-button" href={invite} target="_blank" rel="noopener noreferrer">Adicionar bot pelo Discord ↗︎</a>}
+        {invite && <a className="subtle-button" href={invite} target="_blank" rel="noopener noreferrer">Adicionar bot pelo Discord<Icon name="external" size={15}/></a>}
         <p className="inline-note">{botPresent ? 'Bot conectado e com Criar Convite no servidor.' : 'Após adicionar o bot com Criar Convite, aguarde até um minuto e atualize a página.'}</p>
         <label htmlFor="count">Quantidade solicitada</label><input id="count" value={count} onChange={e => setCount(e.target.value)} type="number" min="1" max={Math.min(state.memberLimit || 500, state.eligible)} required placeholder="Ex.: 100"/>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="discord-button" type="submit" disabled={saving || !botPresent || !state.eligible}>{saving ? 'Conferindo…' : repeatMode ? 'Puxar novamente' : 'Iniciar recuperação consentida'}<span aria-hidden="true">→</span></button>
+        <button className="discord-button" type="submit" disabled={saving || !botPresent || !state.eligible}>{saving ? 'Conferindo…' : repeatMode ? 'Puxar novamente' : 'Iniciar recuperação consentida'}<Icon name="arrow" size={16}/></button>
         <p className="privacy">A contagem final mostra apenas as entradas aceitas pelo Discord. O limite deste Gift é {state.memberLimit} por puxada.</p>
       </form>}
   </section></Shell>;
@@ -196,10 +200,10 @@ function StatusPage({ status = 'invalid' }) {
   const [title, description] = messages[status] || messages.temporary;
   const success = status === 'success';
   return <Shell><section className={`card status-card verification-result${success ? ' verified' : ''}`} role="status" aria-live="polite">
-    <div className={`status-icon ${success ? 'success' : ''}`}>{success ? '✓' : <ShieldIcon/>}</div>
+    <div className={`status-icon ${success ? 'success' : ''}`}>{success ? <Icon name="check" size={27}/> : <ShieldIcon/>}</div>
     <span className="eyebrow">CLOUD · DISCORD OAUTH2</span><h1>{title}</h1><p className="lead">{description}</p>
-    {success && <div className="verification-result-steps"><div><span>01</span><strong>Conta autorizada</strong><b>✓</b></div><div><span>02</span><strong>Verificação registrada</strong><b>✓</b></div><div><span>03</span><strong>Acesso concluído</strong><b>✓</b></div></div>}
-    <a href={success ? '/dashboard' : '/'} className="subtle-button">{success ? 'Abrir meu painel' : 'Voltar ao início'} <span aria-hidden="true">→</span></a>
+    {success && <div className="verification-result-steps"><div><span>01</span><strong>Conta autorizada</strong><b><Icon name="check" size={16}/></b></div><div><span>02</span><strong>Verificação registrada</strong><b><Icon name="check" size={16}/></b></div><div><span>03</span><strong>Acesso concluído</strong><b><Icon name="check" size={16}/></b></div></div>}
+    <a href={success ? '/dashboard' : '/'} className="subtle-button">{success ? 'Abrir meu painel' : 'Voltar ao início'} <Icon name="arrow" size={16}/></a>
     <p className="verification-result-footnote">{success ? 'Você pode voltar ao Discord. O cargo configurado pode levar alguns instantes para aparecer.' : 'Confira a autorização no Discord e tente novamente se necessário.'}</p>
   </section></Shell>;
 }
@@ -218,12 +222,12 @@ function PreviewPage({ parts }) {
   return <Shell theme={theme}><section className="card home-card"><span className="eyebrow">PRÉ-VISUALIZAÇÃO · NÃO CONSOME GIFT</span>
     <h1>{theme.title}</h1><p className="lead">{theme.description}</p>
     {theme.banner && <img className="preview-banner" src={theme.banner} alt="Banner da página" onError={e => { e.currentTarget.hidden = true; }}/>}
-    <div className="discord-button preview-button"><DiscordIcon/>{theme.button}<span aria-hidden="true">↗︎</span></div>
+    <div className="discord-button preview-button"><DiscordIcon/>{theme.button}<Icon name="external" size={16}/></div>
     <p className="privacy">Prévia de {state.store}. O botão está desativado e não inicia OAuth.</p>
   </section></Shell>;
 }
 
-function Home() { return <Shell><div className="site-home"><nav className="site-home-links" aria-label="Navegação"><a href="/plans">Conhecer os planos ↗︎</a><a href="/dashboard">Meu painel ↗︎</a></nav><section className="site-home-hero"><div className="site-home-copy"><span className="site-home-kicker"><ShieldIcon/> CLOUD · SEU WORKSPACE</span><h1>Seu servidor,<br/><em>sob seu controle.</em></h1><p>Gerencie seus bots, prepare a verificação com Discord e compartilhe Gifts de recuperação em um único lugar.</p><div className="site-home-actions"><a className="site-home-primary" href="/api/auth/portal"><DiscordIcon/> Entrar com Discord <span aria-hidden="true">↗︎</span></a><a className="site-home-secondary" href="/plans">Ver bots e planos <span aria-hidden="true">→</span></a></div><div className="site-home-footnote"><ShieldIcon/> Autorização oficial do Discord. Nunca pedimos sua senha.</div></div><div className="site-home-visual" aria-hidden="true"><LoginVisual/></div></section><section className="site-home-features" id="como-funciona" aria-label="Como funciona"><div><span>01 / VERIFICAÇÃO</span><h2>Um clique para começar</h2><p>Publique o botão de verificação no seu servidor. O visitante autoriza no Discord e recebe o resultado.</p></div><div><span>02 / GIFTS</span><h2>Links da sua loja</h2><p>Crie links com validade e limite de uso. Cada página usa a aparência configurada para sua aplicação.</p></div><div><span>03 / PAINEL</span><h2>Todas as aplicações</h2><p>Entre com sua conta Discord para ver os bots vinculados ao mesmo proprietário e as configurações disponíveis.</p></div></section></div></Shell>; }
+function Home() { return <Shell><div className="site-home"><nav className="site-home-links" aria-label="Navegação"><a href="/plans">Conhecer os planos<Icon name="external" size={14}/></a><a href="/dashboard">Meu painel<Icon name="external" size={14}/></a></nav><section className="site-home-hero"><div className="site-home-copy"><span className="site-home-kicker"><ShieldIcon/> CLOUD · SEU WORKSPACE</span><h1>Seu servidor,<br/><em>sob seu controle.</em></h1><p>Gerencie seus bots, prepare a verificação com Discord e compartilhe Gifts de recuperação em um único lugar.</p><div className="site-home-actions"><a className="site-home-primary" href="/api/auth/portal"><DiscordIcon/> Entrar com Discord <Icon name="external" size={16}/></a><a className="site-home-secondary" href="/plans">Ver bots e planos <Icon name="arrow" size={16}/></a></div><div className="site-home-footnote"><ShieldIcon/> Autorização oficial do Discord. Nunca pedimos sua senha.</div></div><div className="site-home-visual" aria-hidden="true"><LoginVisual/></div></section><section className="site-home-features" id="como-funciona" aria-label="Como funciona"><div><span>01 / VERIFICAÇÃO</span><h2>Um clique para começar</h2><p>Publique o botão de verificação no seu servidor. O visitante autoriza no Discord e recebe o resultado.</p></div><div><span>02 / GIFTS</span><h2>Links da sua loja</h2><p>Crie links com validade e limite de uso. Cada página usa a aparência configurada para sua aplicação.</p></div><div><span>03 / PAINEL</span><h2>Todas as aplicações</h2><p>Entre com sua conta Discord para ver os bots vinculados ao mesmo proprietário e as configurações disponíveis.</p></div></section></div></Shell>; }
 
 const path = window.location.pathname;
 const gift = path.match(/^\/g\/([A-Za-z0-9_-]+)$/);

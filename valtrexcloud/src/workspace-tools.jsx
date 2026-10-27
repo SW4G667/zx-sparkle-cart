@@ -1,61 +1,77 @@
-import React, { useState } from 'react';
-import { PALETTES, DEFAULT_PREFERENCES, filterLogs, logsCsv } from './preferences.mjs';
+import React, { useState, useEffect, useRef } from 'react';
+import Icon from './icons.jsx';
+import { DEFAULT_PREFERENCES, filterLogs, logsCsv, formatDate } from './preferences.mjs';
 
 export function LoginVisual() {
-  return <div className="cloud-login-visual" aria-hidden="true"><div className="cloud-orbit orbit-one"/><div className="cloud-orbit orbit-two"/>
-    <div className="cloud-visual-center"><svg viewBox="0 0 64 64" fill="none"><path d="M19 47h27a12 12 0 0 0 1-24 17 17 0 0 0-32-3 14 14 0 0 0 4 27Z" stroke="currentColor" strokeWidth="2.5"/><path d="m26 32 6-6 6 6M32 26v15" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
-    <div className="cloud-float float-one"><span>01</span><div><strong>Suas aplicações</strong><small>Uma visão completa</small></div><b>↗</b></div>
-    <div className="cloud-float float-two"><span>02</span><div><strong>Sua identidade</strong><small>Seu próprio estilo</small></div><b>◐</b></div>
-    <div className="cloud-float float-three"><span>03</span><div><strong>Sua comunidade</strong><small>Conexões com consentimento</small></div><b>◇</b></div>
-    <div className="cloud-art-caption">MENOS ABAS. MAIS CONTROLE.</div></div>;
+  return <div className="cloud-login-visual" aria-hidden="true"><div className="login-grid"/><div className="visual-workspace"><div className="visual-top"><span><Icon name="cloud"/> Cloud</span><span>Workspace</span></div><div className="visual-heading"><span>SEU PRÓXIMO PASSO</span><strong>Mais espaço<br/>para criar.</strong></div><div className="visual-lines"><i/><i/><i/></div><div className="visual-tiles">{[['apps','Aplicações'],['shield','Verificação'],['gifts','Comunidade']].map(([name,label])=><div key={name}><Icon name={name} size={22}/><span>{label}</span></div>)}</div><div className="visual-bottom"><Icon name="check" size={14}/> Tudo em um só lugar<Icon name="arrow" size={16}/></div></div><p className="visual-caption">SIMPLES PARA VOCÊ. PRONTO PARA CRESCER.</p></div>;
 }
 
-export function AppToolbar({ query, setQuery, status, setStatus, preferences, update }) {
-  return <div className="cloud-toolbar"><label className="cloud-search"><span aria-hidden="true">⌕</span><input aria-label="Buscar aplicação por nome ou ID" placeholder="Buscar nome ou ID…" value={query} onChange={e => setQuery(e.target.value)}/></label>
-    <label><span className="sr-only">Estado do plano</span><select aria-label="Filtrar estado do plano" value={status} onChange={e => setStatus(e.target.value)}><option value="all">Todos os planos</option><option value="active">Ativos</option><option value="expired">Vencidos</option><option value="suspended">Suspensos</option><option value="unknown">Sem informação</option></select></label>
-    <label><span className="sr-only">Ordenação</span><select aria-label="Ordenar aplicações" value={preferences.sort} onChange={e => update({ sort: e.target.value })}><option value="name">Nome A–Z</option><option value="expiry">Vencimento</option><option value="status">Estado do plano</option></select></label>
-    <div className="cloud-segment" aria-label="Exibição"><button aria-label="Exibir em cards" aria-pressed={preferences.layout === 'grid'} onClick={() => update({ layout: 'grid' })}>▦</button><button aria-label="Exibir em lista" aria-pressed={preferences.layout === 'list'} onClick={() => update({ layout: 'list' })}>☷</button></div></div>;
+export function AppToolbar({ query, setQuery, status, setStatus, preferences, update, favoritesOnly, setFavoritesOnly }) {
+  return <div className="cloud-toolbar"><label className="cloud-search"><Icon name="search"/><input aria-label="Buscar aplicação por nome ou ID" placeholder="Buscar aplicação…" value={query} onChange={e => setQuery(e.target.value)}/></label>
+    <select aria-label="Filtrar estado do plano" value={status} onChange={e => setStatus(e.target.value)}><option value="all">Todos os planos</option><option value="active">Ativos</option><option value="expired">Vencidos</option><option value="suspended">Suspensos</option><option value="unknown">Sem informação</option></select>
+    <select aria-label="Ordenar aplicações" value={preferences.sort} onChange={e => update({ sort: e.target.value })}><option value="name">Nome A–Z</option><option value="expiry">Vencimento</option><option value="status">Estado do plano</option></select>
+    <button className={`cloud-icon-button ${favoritesOnly ? 'selected' : ''}`} aria-label="Mostrar somente favoritos" aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(!favoritesOnly)}><Icon name="star"/></button>
+    <div className="cloud-segment"><button aria-label="Exibir em cards" aria-pressed={preferences.layout === 'grid'} onClick={() => update({ layout: 'grid' })}><Icon name="grid"/></button><button aria-label="Exibir em lista" aria-pressed={preferences.layout === 'list'} onClick={() => update({ layout: 'list' })}><Icon name="list"/></button></div></div>;
 }
 
 export function PreferencesPanel({ value, update }) {
-  return <div className="cloud-preferences"><section><span className="portal-overline">PERSONALIZE SEU ESPAÇO</span><h3>Do seu jeito.</h3><p>Estas preferências ficam neste navegador. A aparência pública de cada aplicação é configurada em Aparência.</p>
-    <h4>Cor de destaque</h4><div className="cloud-swatches">{Object.entries(PALETTES).map(([key, color]) => <button key={key} aria-pressed={value.palette === key} onClick={() => update({ palette: key })}><i style={{ background: color }}/>{({ mint: 'Verde-água', blue: 'Azul céu', amber: 'Âmbar' })[key]}{value.palette === key && <span>✓</span>}</button>)}</div>
-    <div className="cloud-preview"><span className="cloud-preview-chip">PRÉVIA DO WORKSPACE</span><strong>Um espaço para suas ideias.</strong><div><i/><i/><i/></div><button disabled>Seu destaque →</button></div></section>
-    <section><h4>Organização</h4><label className="cloud-option"><span><strong>Interface compacta</strong><small>Menos espaço entre os elementos.</small></span><input type="checkbox" checked={value.density === 'compact'} onChange={e => update({ density: e.target.checked ? 'compact' : 'comfortable' })}/></label>
-    <label className="cloud-option"><span><strong>Reduzir animações</strong><small>Uma navegação com menos movimento.</small></span><input type="checkbox" checked={value.reducedMotion} onChange={e => update({ reducedMotion: e.target.checked })}/></label>
-    <label className="cloud-option"><span><strong>Avisos de vencimento</strong><small>Destacar planos próximos do fim na visão geral.</small></span><input type="checkbox" checked={value.expiryNotice} onChange={e => update({ expiryNotice: e.target.checked })}/></label>
-    <button className="portal-outline" onClick={() => update(DEFAULT_PREFERENCES)}>Restaurar preferências</button></section></div>;
+  return <div className="cloud-preferences"><section><span className="portal-overline">APARÊNCIA DO WORKSPACE</span><h3>Menos ruído.<br/>Mais você.</h3><p>Personalize este navegador. A página pública de cada aplicação tem sua própria configuração.</p>
+    <div className="theme-choices">{[['dark','Escuro','moon'],['light','Claro','sun'],['system','Sistema','monitor']].map(([key,label,icon]) => <button key={key} aria-pressed={value.theme === key} onClick={() => update({ theme:key })}><div className={`theme-sample sample-${key}`}><i/><div><i/><i/></div></div><span><Icon name={icon} size={16}/>{label}{value.theme === key && <Icon name="check" size={15}/>}</span></button>)}</div>
+    <div className="preference-hint"><Icon name="info"/>Preferências salvas apenas neste navegador. Nenhuma credencial é armazenada aqui.</div></section>
+    <section><h4>Conforto e privacidade</h4>{[
+      ['Interface compacta','Reduzir o espaço entre cards e campos.',value.density === 'compact',checked=>update({density:checked?'compact':'comfortable'})],
+      ['Reduzir animações','Uma navegação com menos movimento.',value.reducedMotion,checked=>update({reducedMotion:checked})],
+      ['Avisos de vencimento','Destacar planos próximos do fim.',value.expiryNotice,checked=>update({expiryNotice:checked})],
+      ['Ocultar IDs na listagem','Mais privacidade ao compartilhar sua tela.',value.hideIds,checked=>update({hideIds:checked})],
+    ].map(([label,description,checked,change])=><label className="cloud-option" key={label}><span><strong>{label}</strong><small>{description}</small></span><input type="checkbox" role="switch" checked={checked} onChange={e=>change(e.target.checked)}/></label>)}
+    <label className="preference-select"><span>Horários da atividade</span><select aria-label="Fuso horário da atividade" value={value.timezone} onChange={e=>update({timezone:e.target.value})}><option value="local">Horário deste dispositivo</option><option value="UTC">Horário UTC</option></select></label>
+    <button className="portal-outline" onClick={() => update(DEFAULT_PREFERENCES)}><Icon name="refresh"/>Restaurar preferências</button></section></div>;
 }
 
-export function ActivityPanel({ logs, refresh, onError }) {
-  const [query, setQuery] = useState('');
-  const [since, setSince] = useState('');
-  const [busy, setBusy] = useState(false);
-  const rows = filterLogs(logs, query, since);
-  const exportCsv = () => {
-    const url = URL.createObjectURL(new Blob([logsCsv(rows)], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a'); link.href = url; link.download = 'cloud-atividade.csv'; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-  return <><div className="cloud-toolbar"><label className="cloud-search"><span aria-hidden="true">⌕</span><input aria-label="Buscar evento" placeholder="Filtrar eventos…" value={query} onChange={e => setQuery(e.target.value)}/></label><label className="cloud-date">A partir de<input type="date" value={since} onChange={e => setSince(e.target.value)}/></label>
-    <button className="portal-outline" disabled={!rows.length} onClick={exportCsv}>Exportar CSV ↓</button><button className="portal-outline" disabled={busy} onClick={async () => { setBusy(true); try { await refresh(); } catch (error) { onError(error.message); } finally { setBusy(false); } }}>{busy ? 'Atualizando…' : 'Atualizar ↻'}</button></div>
-    <p className="cloud-result-count">{rows.length} de {logs.length} evento(s) carregado(s)</p>
-    {rows.length ? <div className="portal-timeline">{rows.map((row, index) => <div key={`${row.created_at}-${index}`}><span className="portal-timeline-dot"/><div><strong>{String(row.event || 'Evento').replaceAll('_', ' ')}</strong><small>{new Date(row.created_at).toLocaleString('pt-BR')}</small></div></div>)}</div> : <div className="portal-empty"><h3>Nenhum evento encontrado</h3><p>Tente outro filtro ou atualize o histórico desta aplicação.</p></div>}</>;
+export function ActivityPanel({ logs, refresh, onError, timezone = 'local' }) {
+  const [query, setQuery] = useState(''); const [since, setSince] = useState(''); const [until,setUntil]=useState(''); const [busy, setBusy] = useState(false);
+  const rows = filterLogs(logs, query, since).filter(row=>!until || Date.parse(row.created_at)<new Date(`${until}T23:59:59.999`).getTime());
+  const exportCsv = () => { const url = URL.createObjectURL(new Blob([logsCsv(rows)], {type:'text/csv;charset=utf-8'})); const link=document.createElement('a');link.href=url;link.download='cloud-atividade.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000); };
+  return <><div className="cloud-toolbar"><label className="cloud-search"><Icon name="search"/><input aria-label="Buscar evento" placeholder="Pesquisar evento…" value={query} onChange={e=>setQuery(e.target.value)}/></label><label className="cloud-date">De<input aria-label="Data inicial" type="date" value={since} onChange={e=>setSince(e.target.value)}/></label><label className="cloud-date">Até<input aria-label="Data final" type="date" min={since} value={until} onChange={e=>setUntil(e.target.value)}/></label>
+    <button className="portal-outline" disabled={!rows.length} onClick={exportCsv}><Icon name="download"/>Exportar CSV</button><button className="cloud-icon-button" aria-label="Atualizar atividade" disabled={busy} onClick={async()=>{setBusy(true);try{await refresh()}catch(error){onError(error.message)}finally{setBusy(false)}}}><Icon name="refresh" className={busy?'spinning':''}/></button></div>
+    <div className="cloud-result-line"><span>{rows.length} de {logs.length} evento(s) carregado(s)</span>{(query||since||until)&&<button onClick={()=>{setQuery('');setSince('');setUntil('')}}>Limpar filtros</button>}</div>
+    {rows.length?<div className="portal-timeline">{rows.map((row,index)=><div key={`${row.created_at}-${index}`}><span className="activity-icon"><Icon name={String(row.event).includes('gift')?'gifts':'shield'}/></span><div><strong>{String(row.event||'Evento').replaceAll('_',' ')}</strong><small>{formatDate(row.created_at,timezone)}</small></div><span className="activity-tag">Registrado</span></div>)}</div>:<div className="portal-empty"><Icon name="logs" size={28}/><h3>Nenhum evento encontrado</h3><p>Tente outro filtro ou atualize o histórico desta aplicação.</p></div>}</>;
 }
 
 export function SetupChecklist({ config, open }) {
-  const steps = [{ label: 'Autenticação cadastrada', done: config?.secretConfigured, tab: 'cloud' },
-    { label: 'Servidor principal definido', done: Boolean(config?.guildId), tab: 'cloud' },
-    { label: 'Canal de verificação publicado', done: Boolean(config?.verifyChannelId), tab: 'verification' }];
-  return <div className="cloud-setup"><div><span className="portal-overline">PRÓXIMOS PASSOS</span><h3>Prepare sua aplicação</h3><p>{steps.filter(s => s.done).length} de 3 etapas concluídas</p></div><div>{steps.map(step => <button key={step.label} onClick={() => open(step.tab)}><span className={step.done ? 'done' : ''}>{step.done ? '✓' : '○'}</span>{step.label}<b>→</b></button>)}</div></div>;
+  const steps=[{label:'Autenticação cadastrada',done:config?.secretConfigured,tab:'cloud'},{label:'Servidor principal definido',done:Boolean(config?.guildId),tab:'cloud'},{label:'Canal de verificação publicado',done:Boolean(config?.verifyChannelId),tab:'verification'}];
+  const done=steps.filter(s=>s.done).length;
+  return <div className="cloud-setup"><div><span className="portal-overline">PRIMEIROS PASSOS</span><h3>Prepare sua aplicação</h3><p>{done} de 3 etapas concluídas</p><div className="setup-progress" aria-label={`${done} de 3 etapas concluídas`}><span style={{width:`${done/3*100}%`}}/></div></div><div>{steps.map(step=><button key={step.label} onClick={()=>open(step.tab)}><span className={`setup-check ${step.done?'done':''}`}><Icon name={step.done?'check':'right'} size={13}/></span>{step.label}<Icon name="right" size={16}/></button>)}</div></div>;
+}
+
+export function ApplicationGrid({ apps, open, preferences, toggleFavorite, profileLabels, statusLabels, limit }) {
+  const [page,setPage]=useState(1);const key=apps.map(a=>a.id).join(':');useEffect(()=>setPage(1),[key]);
+  const pages=Math.max(1,Math.ceil(apps.length/12));const actual=Math.min(page,pages);const items=limit?apps.slice(0,limit):apps.slice((actual-1)*12,actual*12);
+  return <><div className={`application-grid layout-${preferences.layout}`}>{items.map(item=>{
+    const favorite=preferences.favorites.includes(`${item.source}:${item.id}`);
+    return <article className="application-card" key={`${item.source}:${item.id}`}><button className="application-open" onClick={()=>open(item)}><div className="app-card-top"><span className="app-avatar"><Icon name={item.profile==='robux'?'subscriptions':'apps'} size={23}/></span><span className={`app-status status-${item.status}`}>{statusLabels[item.status]||'Cloud vinculado'}</span></div><h3>{item.label}</h3><p>{profileLabels[item.profile]||'Aplicação'}{!preferences.hideIds&&<small>{item.id}</small>}</p><div className="app-card-bottom"><span>{item.cloudId?'Gerenciar aplicação':'Ver detalhes'}</span><Icon name="arrow" size={16}/></div></button><button className={`favorite-button ${favorite?'is-favorite':''}`} aria-label={`${favorite?'Remover dos':'Adicionar aos'} favoritos: ${item.label}`} aria-pressed={favorite} onClick={()=>toggleFavorite(item)}><Icon name="star" size={17} fill={favorite?'currentColor':'none'}/></button></article>;
+  })}</div>{!limit&&pages>1&&<div className="cloud-pagination"><span>Página {actual} de {pages}</span><button className="cloud-icon-button" aria-label="Página anterior" disabled={actual===1} onClick={()=>setPage(p=>p-1)}><Icon name="left"/></button><button className="cloud-icon-button" aria-label="Próxima página" disabled={actual===pages} onClick={()=>setPage(p=>p+1)}><Icon name="right"/></button></div>}</>;
+}
+
+export function GiftList({ gifts, copy, toggle, saving }) {
+  const [query,setQuery]=useState(''),[status,setStatus]=useState('all');
+  const rows=gifts.filter(g=>(!query||`${g.name} ${g.status}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))&&(status==='all'||(status==='active'?g.active:!g.active)));
+  return <><div className="cloud-toolbar"><label className="cloud-search"><Icon name="search"/><input aria-label="Buscar Gift" value={query} placeholder="Buscar Gift…" onChange={e=>setQuery(e.target.value)}/></label><select aria-label="Filtrar Gifts" value={status} onChange={e=>setStatus(e.target.value)}><option value="all">Todos os Gifts</option><option value="active">Habilitados</option><option value="inactive">Desativados</option></select><button className="portal-outline" disabled={!rows.length} onClick={()=>copy(rows.map(g=>g.link).filter(Boolean).join('\n'))}><Icon name="copy"/>Copiar links filtrados</button></div><div className="gift-list">{rows.length?rows.map(g=><article key={g.id}><span className="app-avatar"><Icon name="gifts"/></span><div><h4>{g.name}</h4><p>{g.uses} usos · limite de {g.memberLimit} membros</p><span className="app-status">{({active:'Habilitado',expired:'Expirado',full:'Limite atingido',disabled:'Desativado'})[g.status] || g.status || (g.active?'Habilitado':'Desativado')}</span></div><div className="gift-row-actions"><button className="cloud-icon-button" aria-label={`Copiar link: ${g.name}`} onClick={()=>copy(g.link)}><Icon name="copy"/></button><button className="portal-outline" disabled={saving} onClick={()=>toggle(g)}>{g.active?'Desativar':'Ativar'}</button></div></article>):<div className="portal-empty"><Icon name="gifts" size={28}/><h3>Nenhum Gift encontrado</h3><p>Ajuste os filtros ou crie seu primeiro link acima.</p></div>}</div></>;
+}
+
+export function CommandMenu({ apps, navigation, selectTab, openApp, close }) {
+  const [query,setQuery]=useState('');const input=useRef(null);const dialog=useRef(null);
+  useEffect(()=>{const previous=document.activeElement;input.current?.focus();return()=>previous?.focus()},[]);
+  const actions=navigation.filter(([,label])=>label.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
+  const results=apps.filter(a=>`${a.label} ${a.id}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))).slice(0,8);
+  return <div className="command-backdrop" onClick={close}><section ref={dialog} className="command-dialog" role="dialog" aria-modal="true" aria-label="Busca rápida" onClick={e=>e.stopPropagation()} onKeyDown={e=>{if(e.key==='Escape')close();if(e.key==='Tab'){const items=dialog.current.querySelectorAll('input,button');if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items[items.length-1]?.focus()}else if(!e.shiftKey&&document.activeElement===items[items.length-1]){e.preventDefault();items[0]?.focus()}}}}><div className="command-search"><Icon name="search" size={20}/><input ref={input} aria-label="Buscar páginas ou aplicações" placeholder="O que você procura?" value={query} onChange={e=>setQuery(e.target.value)}/><button className="cloud-icon-button" aria-label="Fechar busca" onClick={close}><Icon name="close"/></button></div><div className="command-results"><span className="portal-overline">NAVEGAÇÃO</span>{actions.map(([key,label])=><button key={key} onClick={()=>{selectTab(key);close()}}><Icon name={key}/>{label}<Icon name="right" size={15}/></button>)}{results.length>0&&<span className="portal-overline">APLICAÇÕES</span>}{results.map(a=><button key={`${a.source}:${a.id}`} onClick={()=>{openApp(a);close()}}><Icon name="apps"/>{a.label}<Icon name="right" size={15}/></button>)}{!actions.length&&!results.length&&<p className="command-empty">Nenhum resultado. Tente outro nome.</p>}</div><footer><kbd>Tab</kbd> navegar <kbd>Esc</kbd> fechar</footer></section></div>;
+}
+
+export function Notices({ apps, open }) {
+  return <details className="notices"><summary aria-label="Avisos de planos"><Icon name="bell"/>{apps.length>0&&<i/>}</summary><section><div className="notices-title"><strong>Avisos de planos</strong><span>{apps.length}</span></div>{apps.length?apps.map(a=><button key={`${a.source}:${a.id}`} onClick={event=>{event.currentTarget.closest('details').open=false;open(a)}}><Icon name="clock"/><span><strong>{a.label}</strong><small>{new Date(a.expiresAt)<new Date()?'Plano vencido':'Vencimento em até 7 dias'}</small></span><Icon name="right" size={16}/></button>):<div className="notices-empty"><Icon name="check" size={25}/><p>Nenhum vencimento próximo nos planos sincronizados.</p></div>}</section></details>;
 }
 
 export function HelpPanel({ invite }) {
-  const items = [
-    ['Como vincular minha aplicação?', 'No painel do seu bot no Discord, abra Cloud e vincule a conta proprietária. Atualize a lista de aplicações neste site.'],
-    ['Onde inicio, reinicio ou renovo o bot?', 'O controle do processo e as renovações ficam na central do Manager, no servidor oficial. O portal mostra os dados sincronizados e gerencia a configuração Cloud.'],
-    ['Por que a aplicação não aparece?', 'Confira se você entrou com a mesma conta Discord registrada como proprietária. Uma sincronização recente do Manager também pode ser necessária.'],
-    ['Como funciona a recuperação?', 'Somente membros que autorizaram a finalidade podem participar. Cada autorização tem validade; um Gift não recupera membros sem consentimento.'],
-    ['Como revogo o acesso?', 'No Discord, abra Configurações → Aplicativos autorizados e revogue a aplicação. Para sair deste portal, use Sair da conta.'],
-  ];
-  return <div className="cloud-help">{items.map(([title, text]) => <details key={title}><summary>{title}</summary><p>{text}</p></details>)}{invite && <a className="portal-primary" href={invite} target="_blank" rel="noopener noreferrer">Abrir servidor de suporte ↗</a>}</div>;
+  const items=[['Como vincular minha aplicação?','No painel do seu bot no Discord, abra Cloud e vincule a conta proprietária. Atualize a lista neste site.'],['Onde inicio, reinicio ou renovo o bot?','O controle do processo e as renovações ficam na central do Manager no servidor oficial. Este portal mostra os dados sincronizados e gerencia a configuração Cloud.'],['Por que a aplicação não aparece?','Confira se entrou com a mesma conta Discord registrada como proprietária. Uma sincronização recente do Manager também pode ser necessária.'],['Como funciona a recuperação?','Somente membros que autorizaram a finalidade podem participar. Cada autorização tem validade; um Gift não recupera membros sem consentimento.'],['Como revogo o acesso?','No Discord, abra Configurações, Aplicativos autorizados e revogue a aplicação. Para sair deste portal, use Sair da conta.'],['Quais atalhos posso usar?','Ctrl+K ou Command+K abre a busca rápida por página ou aplicação. Escape fecha a busca ou o menu móvel.'],['Posso exportar dados?','A atividade permite exportar os eventos carregados em CSV. A exportação contém somente data e nome do evento. Tokens e credenciais não são exportados.']];
+  return <div className="cloud-help">{items.map(([title,text])=><details key={title}><summary>{title}<Icon name="right" size={16}/></summary><p>{text}</p></details>)}{invite&&<a className="portal-primary" href={invite} target="_blank" rel="noopener noreferrer">Abrir servidor de suporte<Icon name="external" size={16}/></a>}</div>;
 }

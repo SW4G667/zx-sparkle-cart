@@ -75,3 +75,11 @@ A interface usa grafite e verde-água, com opções locais de cor (verde-água, 
 O painel mostra apenas dados retornados pela sessão autorizada. O controle de processo e a renovação dos bots continuam na central do Manager no Discord. O login, a autorização OAuth e o consentimento usam os endpoints existentes. Não há acesso administrativo por dados inventados.
 
 Validação: `npm test` compila e testa o portal e o fluxo OAuth. A verificação no navegador usou respostas locais simuladas para testar os dez menus, filtros, preferências persistentes, exportação CSV, gravação com CSRF, Gifts, saída com falha, desktop e celular. Isso não substitui a autorização real de uma conta Discord em produção.
+
+## Cloud R66 — interface monocromática
+
+A revisão R66 substitui as camadas visuais anteriores por um sistema em preto, branco e cinza. Ícones decorativos e ações usam SVGs com a mesma grade de 24 pixels. O painel tem temas escuro, claro e do sistema, navegação inferior no celular, menu completo e busca rápida por Ctrl+K/Command+K.
+
+Novas opções: favoritos de aplicações, filtro por favoritos, paginação de 12 itens, avisos de vencimento no cabeçalho, privacidade para IDs nas listagens, horários locais ou UTC, busca/filtro de Gifts e cópia dos links filtrados, filtro de atividade por intervalo e limpeza dos filtros. Preferências e favoritos são locais ao navegador e não incluem credenciais. As APIs de dados e autorização existentes continuam responsáveis por toda operação remota.
+
+Os dados da área autenticada foram verificados com respostas simuladas no navegador. Foram conferidas as dez seções em quatro larguras (320, 390, 768 e 1440 px), as páginas públicas nessas larguras, a paginação, os favoritos, o atalho de busca, os temas, a privacidade de IDs, a exportação de atividade e o consentimento da verificação. `npm test` também compila o site e executa os testes de dados e segurança OAuth. O login completo de uma conta real Discord não faz parte dessa simulação.

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import './plans.css';
+import Icon from './icons.jsx';
 import { BRAND, displayName } from './branding.mjs';
 import { safeInvite } from './preferences.mjs';
 
@@ -24,22 +24,22 @@ export default function Plans() {
     return () => controller.abort();
   }, []);
   return <div className="plans-page">
-    <header className="plans-header"><a className="plans-brand" href="/"><span>☁</span><strong>{BRAND}</strong></a>
+    <header className="plans-header"><a className="plans-brand" href="/"><span><Icon name="cloud" size={24}/></span><strong>{BRAND}</strong></a>
       <nav aria-label="Navegação principal"><a href="/">Início</a><a href="/plans" aria-current="page">Planos</a><a href="/dashboard">Meu painel</a></nav></header>
     <main className="plans-main">
       <div className="plans-intro"><span className="plans-kicker">APLICAÇÕES PARA DISCORD</span><h1>Escolha o bot certo<br/><em>para a sua operação.</em></h1>
         <p>Conheça os recursos e compare os planos configurados no Manager. Compra e renovação acontecem somente no servidor oficial pelo Discord.</p></div>
       <div className="plans-grid">{catalog.plans.map((plan, index) => <article className="plans-card" key={plan.profile}>
-        <div className="plans-card-top"><span className="plans-index">0{index + 1} / {plan.profile === 'sales' ? 'VENDAS' : 'ROBUX'}</span><span className="plans-orbit" aria-hidden="true">{plan.profile === 'sales' ? '◈' : '◇'}</span></div>
+        <div className="plans-card-top"><span className="plans-index">0{index + 1} / {plan.profile === 'sales' ? 'VENDAS' : 'ROBUX'}</span><span className="plans-orbit" aria-hidden="true"><Icon name={plan.profile === 'sales' ? 'apps' : 'subscriptions'} size={20}/></span></div>
         <h2>{displayName(plan.name)}</h2><p className="plans-description">{displayName(plan.description)}</p>
-        <div className="plans-rule"/><h3>O que você pode fazer</h3><ul>{(FEATURES[plan.profile] || []).map(feature => <li key={feature}><span aria-hidden="true">✓</span>{feature}</li>)}</ul>
+        <div className="plans-rule"/><h3>O que você pode fazer</h3><ul>{(FEATURES[plan.profile] || []).map(feature => <li key={feature}><span aria-hidden="true"><Icon name="check" size={16}/></span>{feature}</li>)}</ul>
         <div className="plans-rule"/><h3>Planos disponíveis</h3>
         {plan.options?.length ? <div className="plans-options">{plan.options.map((option, i) => <div key={`${option.label}-${i}`}><span><strong>{option.label}</strong><small>{option.days} dia{option.days === 1 ? '' : 's'}</small></span><b>{money(option.price)}</b></div>)}</div>
           : <p className="plans-unavailable">Os valores aparecem aqui após a sincronização do Manager.</p>}
-        {catalog.officialInvite ? <a className="plans-buy" href={catalog.officialInvite} target="_blank" rel="noopener noreferrer">Comprar ou renovar no Discord <span aria-hidden="true">↗︎</span></a>
+        {catalog.officialInvite ? <a className="plans-buy" href={catalog.officialInvite} target="_blank" rel="noopener noreferrer">Comprar ou renovar no Discord <Icon name="external" size={16}/></a>
           : <div className="plans-buy-disabled" role="status">{catalog.loading ? 'Carregando convite oficial…' : 'Convite oficial ainda não configurado no Manager'}</div>}
       </article>)}</div>
       <section className="plans-after"><div><span>COMO FUNCIONA</span><h2>Comece pelo Discord.<br/>Gerencie pelo painel.</h2></div><ol><li>Entre no servidor oficial e escolha seu plano.</li><li>Após a ativação, faça login no site com Discord.</li><li>Suas aplicações vinculadas aparecem no painel.</li></ol></section>
-    </main><footer className="plans-footer"><span>© {BRAND}</span><a href="/dashboard">Acessar meu painel ↗︎</a></footer>
+    </main><footer className="plans-footer"><span>© {BRAND}</span><a href="/dashboard">Acessar meu painel<Icon name="external" size={14}/></a></footer>
   </div>;
 }

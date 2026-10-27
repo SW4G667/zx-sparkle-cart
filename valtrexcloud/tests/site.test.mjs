@@ -7,8 +7,8 @@ test('build publica a marca nova sem credenciais no frontend', () => {
   const assets = new URL('../dist/assets/', import.meta.url);
   const js = readdirSync(assets).filter(name => name.endsWith('.js'))
     .map(name => readFileSync(new URL(name, assets), 'utf8')).join('\n');
-  assert.match(html, /ValtrexApplications/);
-  assert.match(js, /ValtrexApplications/);
+  assert.match(html, /Cloud/);
+  assert.match(js, /SEU WORKSPACE/);
   assert.doesNotMatch(js, /SUPABASE_SERVICE_ROLE_KEY|client_secret_cipher|VALTREX_CLOUD_API_KEY/);
 });
 
@@ -25,7 +25,7 @@ test('planos têm HTML rastreável e links de compra dependem do convite oficial
   const robots = readFileSync(new URL('../dist/robots.txt', import.meta.url), 'utf8');
   const sitemap = readFileSync(new URL('../dist/sitemap.xml', import.meta.url), 'utf8');
   const plans = readFileSync(new URL('../src/plans.jsx', import.meta.url), 'utf8');
-  assert.match(html, /Planos Valtrexsallers e Valtrexbuxx/);
+  assert.match(html, /Planos Vendas e Robux/);
   assert.match(robots, /Disallow: \/g\//);
   assert.match(sitemap, /\/plans/);
   assert.match(plans, /catalog\.officialInvite \? <a/);

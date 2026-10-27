@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import './dashboard.css';
 import './dashboard-refresh.css';
+import { BRAND, displayName } from './branding.mjs';
+import { readPreferences, normalizePreferences, PALETTES, filterApps, safeInvite } from './preferences.mjs';
+import { LoginVisual, AppToolbar, PreferencesPanel, ActivityPanel, SetupChecklist, HelpPanel } from './workspace-tools.jsx';
 
 const apiRoot = '/api/portal';
 const nav = [
   ['overview', 'Visão geral', '◈'], ['apps', 'Aplicações', '▣'],
   ['verification', 'Verificação', '◇'], ['cloud', 'Autenticação', '◇'], ['gifts', 'Gifts', '✦'],
-  ['appearance', 'Aparência', '◐'], ['subscriptions', 'Planos', '▣'], ['logs', 'Atividade', '☷'],
+  ['appearance', 'Aparência pública', '◐'], ['subscriptions', 'Planos', '▣'], ['logs', 'Atividade', '☷'],
+  ['preferences', 'Preferências', '◐'], ['help', 'Ajuda', '?'],
 ];
 const icons = {
   overview: <><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21v-8h6v8"/></>,
@@ -16,16 +20,19 @@ const icons = {
   subscriptions: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 15h4"/></>,
   gifts: <><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M12 9v12M2 9h20M12 9c-4-1-5-6-2-6 2 0 2 3 2 6Zm0 0c4-1 5-6 2-6-2 0-2 3-2 6Z"/></>,
   appearance: <><circle cx="12" cy="12" r="9"/><circle cx="8" cy="9" r="1"/><circle cx="15" cy="8" r="1"/><circle cx="17" cy="13" r="1"/><path d="M12 21a3 3 0 0 1 0-6h1a2 2 0 0 0 0-4"/></>,
+  preferences: <><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></>,
+  help: <><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3h.01"/></>,
   logs: <><path d="M4 20V11M9 20V5M14 20v-8M19 20V3"/></>,
 };
 function Icon({ name, size = 19 }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[name] || icons.apps}</svg>; }
-function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true">V</span><span>VALTREX<span className="portal-brand-light">APPLICATIONS</span></span></a>; }
+function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true">☁</span><span>{BRAND}<span className="portal-brand-light">SEU WORKSPACE</span></span></a>; }
 
 async function request(path, { method = 'GET', data, csrf } = {}) {
   const response = await fetch(`${apiRoot}${path}`, {
     method, credentials: 'same-origin',
     headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-valtrex-csrf': csrf || '' },
     body: method === 'GET' ? undefined : JSON.stringify(data || {}),
+    signal: AbortSignal.timeout(12000),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a ação.');
@@ -42,28 +49,28 @@ function Login() {
   return <main className="portal-login"><div className="portal-login-shell">
     <div className="portal-login-copy"><Brand/><div className="portal-login-content">
       <h1>Tudo o que é seu,<br/>em um <em>só lugar.</em></h1>
-      <p>Entre com sua conta Discord para acessar todas as aplicações Valtrex vinculadas a você.</p>
+      <p>Entre com sua conta Discord para acessar todas as aplicações vinculadas a você.</p>
       <a className="portal-login-button" href="/api/auth/portal"><DiscordMark/>Continuar com Discord <span aria-hidden="true">→</span></a>
-      <a className="portal-plans-link" href="/plans">Conhecer bots e planos ↗</a>
+      <a className="portal-plans-link" href="/plans">Conhecer bots e planos ↗︎</a>
       <div className="portal-login-reassurance"><Icon name="cloud" size={18}/> Autenticação oficial do Discord. Seus dados ficam protegidos.</div>
     </div><div className="portal-login-compat"><details><summary>Usar acesso de uma aplicação já configurada</summary>
       <label htmlFor="portal-app-id">ID da aplicação</label>
       <div><input id="portal-app-id" inputMode="numeric" autoComplete="off" value={appId} onChange={event => setAppId(event.target.value.trim())} placeholder="ID da aplicação Discord"/>
       <a href={valid ? `/api/auth/portal/${appId}` : undefined} aria-disabled={!valid} onClick={event => { if (!valid) event.preventDefault(); }}>Entrar</a></div>
     </details></div></div>
-    <div className="portal-login-art" aria-hidden="true"><img src="/portal-network.png" alt=""/></div>
-  </div><p className="portal-powered">Valtrex Applications · OAuth2 oficial do Discord</p></main>;
+    <LoginVisual/>
+  </div><p className="portal-powered">Cloud · OAuth2 oficial do Discord</p></main>;
 }
 
 function Empty({ title, text }) { return <div className="portal-empty"><div className="portal-empty-symbol">◇</div><h3>{title}</h3><p>{text}</p></div>; }
-function Field({ label, value, onChange, type = 'text', placeholder = '', hint = '' }) {
-  return <label className="portal-field"><span>{label}</span><input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} />{hint && <small>{hint}</small>}</label>;
+function Field({ label, value, onChange, type = 'text', placeholder = '', hint = '', ...rest }) {
+  return <label className="portal-field"><span>{label}</span><input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} {...rest} />{hint && <small>{hint}</small>}</label>;
 }
 function Section({ eyebrow, title, description, children, action }) {
   return <section className="portal-section"><div className="portal-section-head"><div><span className="portal-overline">{eyebrow}</span><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>{children}</section>;
 }
 const appStatus = { active: 'Plano ativo', suspended: 'Acesso suspenso', expired: 'Plano vencido', unknown: 'Status não informado' };
-const appProfile = { sales: 'Valtrexsallers', robux: 'Valtrexbuxx', other: 'Aplicação' };
+const appProfile = { sales: 'Bot de Vendas', robux: 'Bot de Robux', other: 'Aplicação' };
 function expiryLabel(value) {
   if (!value) return 'Vencimento não informado';
   const date = new Date(value);
@@ -79,11 +86,11 @@ function ownedApps(session) {
   const combined = managed.map(item => {
     const tenant = cloud.find(app => app.id === item.bot_id || app.id === item.manager_app_id);
     if (tenant) matched.add(tenant.id);
-    return { id: item.manager_app_id, label: item.label, cloudId: tenant?.id || null,
+    return { id: item.manager_app_id, label: displayName(item.label), cloudId: tenant?.id || null,
       profile: item.profile, status: item.status, expiresAt: item.expires_at,
       botId: item.bot_id, source: 'manager' };
   });
-  for (const item of cloud) if (!matched.has(item.id)) combined.push({ id: item.id, label: item.label,
+  for (const item of cloud) if (!matched.has(item.id)) combined.push({ id: item.id, label: displayName(item.label),
     cloudId: item.id, profile: 'other', status: 'unknown', expiresAt: null, source: 'cloud' });
   return combined;
 }
@@ -93,15 +100,27 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState(() => nav.some(item => item[0] === window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'overview');
+  const [preferences, setPreferences] = useState(() => { try { return readPreferences(window.localStorage); } catch { return normalizePreferences(); } });
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const updatePreferences = patch => setPreferences(current => normalizePreferences({ ...current, ...patch }));
+  useEffect(() => { try { localStorage.setItem('cloud.preferences.v1', JSON.stringify(preferences)); } catch {} }, [preferences]);
+  useEffect(() => { window.history.replaceState(null, '', `#${tab}`); }, [tab]);
+  useEffect(() => { const changed = () => { const next = window.location.hash.slice(1); if (nav.some(item => item[0] === next)) setTab(next); }; window.addEventListener('hashchange', changed); return () => window.removeEventListener('hashchange', changed); }, []);
   const [appId, setAppId] = useState('');
   const [config, setConfig] = useState(null);
+  const [detailRefresh, setDetailRefresh] = useState(0);
+  const appRef = useRef(appId); appRef.current = appId;
+  const [createdLinks, setCreatedLinks] = useState([]);
   const [gifts, setGifts] = useState([]);
   const [logs, setLogs] = useState([]);
   const [saving, setSaving] = useState(false);
   const [secret, setSecret] = useState('');
   const [giftForm, setGiftForm] = useState({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresDays: '', count: '1', banner: '' });
   const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => { const escape = event => { if (event.key === 'Escape') setMenuOpen(false); }; window.addEventListener('keydown', escape); return () => window.removeEventListener('keydown', escape); }, []);
   const [managedDetail, setManagedDetail] = useState('');
   const [catalog, setCatalog] = useState({ plans: [], officialInvite: null });
 
@@ -109,29 +128,36 @@ export default function Dashboard() {
   useEffect(() => {
     const controller = new AbortController();
     fetch('/api/public/catalog', { signal: controller.signal }).then(response => response.ok ? response.json() : null)
-      .then(data => { if (data) setCatalog({ plans: data.plans || [], officialInvite: data.officialInvite || null }); })
+      .then(data => { if (data) setCatalog({ plans: data.plans || [], officialInvite: safeInvite(data.officialInvite) }); })
       .catch(() => {});
     return () => controller.abort();
   }, []);
   useEffect(() => {
     if (!session || !appId) return;
     let cancelled = false;
-    setConfig(null); setGifts([]); setLogs([]);
-    Promise.all([request(`/apps/${appId}/config`), request(`/apps/${appId}/gifts`), request(`/apps/${appId}/logs`)])
-      .then(([c, g, l]) => { if (!cancelled) { setConfig(c); setGifts(g.gifts || []); setLogs(l.logs || []); } })
+    setConfig(null); setGifts([]); setLogs([]); setSecret(''); setCreatedLinks([]);
+    Promise.allSettled([request(`/apps/${appId}/config`), request(`/apps/${appId}/gifts`), request(`/apps/${appId}/logs`)])
+      .then(([c, g, l]) => { if (!cancelled) {
+        if (c.status === 'fulfilled') setConfig(c.value);
+        if (g.status === 'fulfilled') setGifts(g.value.gifts || []);
+        if (l.status === 'fulfilled') setLogs(l.value.logs || []);
+        const failed = [c, g, l].find(result => result.status === 'rejected');
+        if (failed) setError(failed.reason?.message || 'Parte dos dados não foi carregada. Atualize para tentar novamente.');
+      } })
       .catch(err => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
-  }, [session, appId]);
+  }, [session, appId, detailRefresh]);
   const app = session?.apps?.find(item => item.id === appId);
   const visibleApps = ownedApps(session);
   const expiringApps = visibleApps.filter(item => item.source === 'manager' && item.expiresAt &&
     new Date(item.expiresAt).getTime() - Date.now() <= 7 * 86400000);
+  const matchingApps = filterApps(visibleApps, query, statusFilter, preferences.sort);
   const selectedManaged = visibleApps.find(item => item.id === managedDetail);
-  const openApp = item => { if (item.cloudId) { setAppId(item.cloudId); setTab('cloud'); } else { setManagedDetail(item.id); setTab('apps'); } setMenuOpen(false); };
+  const openApp = item => { if (saving) return; if (item.cloudId) { setAppId(item.cloudId); setTab('cloud'); } else { setManagedDetail(item.id); setTab('apps'); } setMenuOpen(false); };
   const call = (path, options = {}) => request(`/apps/${appId}${path}`, { ...options, csrf: session.csrf });
   const saveConfig = async data => {
     setSaving(true); setError(''); setFlash('');
-    try { await call('/config', { method: 'PUT', data }); const updated = await call('/config'); setConfig(updated); setSecret(''); setFlash('Configuração salva com sucesso.'); }
+    try { const target = appId; await call('/config', { method: 'PUT', data }); const updated = await call('/config'); if (appRef.current === target) { setConfig(updated); setSecret(''); setFlash('Configuração salva com sucesso.'); } }
     catch (err) { setError(err.message); } finally { setSaving(false); }
   };
   const createGift = async event => {
@@ -156,6 +182,7 @@ export default function Dashboard() {
       }
       const listing = await call('/gifts'); setGifts(listing.gifts || []);
       if (links.length) {
+        setCreatedLinks(links);
         setGiftForm({ name: '', title: '', description: '', memberLimit: '100', maxUses: '', expiresDays: '', count: '1', banner: '' });
         await navigator.clipboard?.writeText(links.join('\n')).catch(() => {});
         setFlash(`${links.length} de ${count} Gift(s) criado(s). Links copiados se o navegador permitiu.`);
@@ -176,46 +203,48 @@ export default function Dashboard() {
     try { await call('/theme/reset', { method: 'POST' }); setConfig(await call('/config')); setFlash('Aparência restaurada. OAuth e Gifts foram preservados.'); }
     catch (err) { setError(err.message); } finally { setSaving(false); }
   };
-  const logout = async () => { try { await request('/logout', { method: 'POST', csrf: session.csrf }); } finally { window.location.assign('/dashboard'); } };
-  const refreshApps = async () => { try { const data = await request('/me'); setSession(data); if (!data.apps?.some(item => item.id === appId)) { setAppId(data.apps?.[0]?.id || ''); setConfig(null); setGifts([]); setLogs([]); } setFlash('Aplicações atualizadas.'); } catch (err) { setError(err.message); } };
+  const logout = async () => { try { await request('/logout', { method: 'POST', csrf: session.csrf }); window.location.assign('/dashboard'); } catch (error) { setError('Não consegui encerrar a sessão. Tente sair novamente.'); } };
+  const copyText = async text => { try { if (!navigator.clipboard) throw Error(); await navigator.clipboard.writeText(text); setFlash('Copiado para a área de transferência.'); } catch { setError('O navegador não permitiu copiar. Selecione o texto e copie manualmente.'); } };
+  const openPreview = async () => { const popup = window.open('', '_blank'); if (!popup) { setError('Permita pop-ups para abrir a prévia.'); return; } popup.opener = null; try { const result = await call('/preview', { method: 'POST' }); const url = new URL(result.link, window.location.origin); if (url.protocol !== 'https:' && url.origin !== window.location.origin) throw new Error('Link de prévia inválido.'); popup.location.href = url.href; } catch (error) { popup.close(); setError(error.message); } };
+  const refreshApps = async () => { setRefreshing(true); setError(''); try { const data = await request('/me'); setSession(data); if (!data.apps?.some(item => item.id === appId)) { setAppId(data.apps?.[0]?.id || ''); setConfig(null); setGifts([]); setLogs([]); } setDetailRefresh(value => value + 1); setFlash('Aplicações atualizadas.'); } catch (err) { setError(err.message); } finally { setRefreshing(false); } };
 
   if (loading) return <div className="portal-loading" role="status">Carregando seu painel…</div>;
   if (!session) return <Login/>;
   const count = visibleApps.length;
-  return <div className="portal-app">{menuOpen && <button className="portal-menu-backdrop" aria-label="Fechar menu" onClick={() => setMenuOpen(false)}/>}<aside className={`portal-sidebar${menuOpen ? ' open' : ''}`}>
+  return <div className={`portal-app cloud-density-${preferences.density} ${preferences.reducedMotion ? 'cloud-reduce-motion' : ''}`} style={{ '--p-blue': PALETTES[preferences.palette], '--p-soft': PALETTES[preferences.palette] }}>{menuOpen && <button className="portal-menu-backdrop" aria-label="Fechar menu" onClick={() => setMenuOpen(false)}/>}<aside id="workspace-navigation" className={`portal-sidebar${menuOpen ? ' open' : ''}`}>
     <Brand/>
     <span className="portal-sidebar-label">PAINEL</span>
-    <div className="portal-app-select"><span>Cloud da aplicação</span><select aria-label="Aplicação atual" value={appId} onChange={e => { setAppId(e.target.value); setTab('overview'); }} disabled={!session.apps?.length}>
+    <div className="portal-app-select"><span>Cloud da aplicação</span><select aria-label="Aplicação atual" value={appId} onChange={e => { setAppId(e.target.value); setTab('overview'); }} disabled={saving || !session.apps?.length}>
       {!session.apps?.length && <option value="">Nenhum bot configurado</option>}
-      {session.apps?.map(item => <option key={item.id} value={item.id}>{item.label} · {item.id.slice(-4)}</option>)}</select></div>
-    <nav aria-label="Navegação do painel">{nav.map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''}
+      {session.apps?.map(item => <option key={item.id} value={item.id}>{displayName(item.label)} · {item.id.slice(-4)}</option>)}</select></div>
+    <nav aria-label="Navegação do painel">{nav.map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} className={tab === key ? 'active' : ''}
       onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><Icon name={key}/>{label}</button>)}</nav>
-    <a className="portal-sidebar-plans" href="/plans">◇ &nbsp; Planos e aplicações ↗</a>
+    <a className="portal-sidebar-plans" href="/plans">◇ &nbsp; Planos e aplicações ↗︎</a>
     <div className="portal-sidebar-bottom"><div className="portal-user">{session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span>{session.user.name.slice(0, 1).toUpperCase()}</span>}
-      <div><strong>{session.user.name}</strong><small>Discord conectado</small></div></div><button onClick={logout}>Sair da conta ↗</button></div>
-  </aside><div className="portal-main"><header className="portal-header"><button className="portal-menu" aria-label="Abrir menu" onClick={() => setMenuOpen(!menuOpen)}>☰</button>
+      <div><strong>{session.user.name}</strong><small>Discord conectado</small></div></div><button onClick={logout}>Sair da conta ↗︎</button></div>
+  </aside><div className="portal-main"><header className="portal-header"><button className="portal-menu" aria-label="Abrir menu" aria-expanded={menuOpen} aria-controls="workspace-navigation" onClick={() => setMenuOpen(!menuOpen)}>☰</button>
       <div className="portal-header-trail">Painel <span>/</span> {nav.find(item => item[0] === tab)?.[1]}</div><div className="portal-header-right"><span className="portal-live-dot"/> Discord conectado {session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span className="portal-header-initial">{session.user.name.slice(0,1)}</span>}</div></header>
     <main className="portal-content"><div className="portal-heading"><h1>{tab === 'overview' ? `Olá, ${session.user.name.split(' ')[0]}.` : nav.find(item => item[0] === tab)?.[1]}</h1>
       <p>{tab === 'overview' ? 'Gerencie suas aplicações vinculadas ao Discord.' : app ? `${app.label} · ${app.id}` : 'Nenhuma aplicação vinculada.'}</p></div>
-      {error && <div className="portal-alert error" role="alert">{error}<button onClick={() => setError('')} aria-label="Fechar aviso">×</button></div>}
+      {error && <div className="portal-alert error" role="alert">{error}<button className="cloud-error-retry" onClick={() => { setError(''); setDetailRefresh(value => value + 1); }}>Tentar novamente</button><button onClick={() => setError('')} aria-label="Fechar aviso">×</button></div>}
       {flash && <div className="portal-alert" role="status">{flash}<button onClick={() => setFlash('')} aria-label="Fechar aviso">×</button></div>}
-      {tab === 'overview' && expiringApps.length > 0 && <div className="portal-expiry-notice" role="status"><span>◷</span><div><strong>Confira seus planos</strong><p>{expiringApps.map(item => `${item.label}: ${expiryLabel(item.expiresAt)}`).join(' · ')}</p></div><button onClick={() => setTab('subscriptions')}>Ver detalhes →</button></div>}
-      {tab === 'overview' && <><div className="portal-stats"><button onClick={() => setTab('apps')}><span className="portal-stat-icon"><Icon name="apps" size={23}/></span><span className="portal-stat-copy"><span>Aplicações vinculadas</span><strong>{count}</strong><small>Na sua conta Discord</small></span><span className="portal-stat-arrow">→</span></button><button onClick={() => setTab('logs')}><span className="portal-stat-icon"><Icon name="cloud" size={23}/></span><span className="portal-stat-copy"><span>Verificações</span><strong>{config?.verified ?? '—'}</strong><small>{app ? `Em ${app.label}` : 'Selecione uma aplicação'}</small></span><span className="portal-stat-arrow">→</span></button><button onClick={() => setTab('cloud')}><span className="portal-stat-icon"><Icon name="cloud" size={23}/></span><span className="portal-stat-copy"><span>Status do Cloud</span><strong className="portal-stat-status">{config ? config.secretConfigured ? 'Configurado' : 'Pendente' : '—'}</strong><small>{config?.secretConfigured ? 'OAuth2 cadastrado' : 'Confira a autenticação'}</small></span><span className="portal-stat-arrow">→</span></button></div>
-        <Section eyebrow="SUAS APLICAÇÕES" title="Suas aplicações" description="Todas as aplicações vinculadas à sua conta Discord." action={<button className="portal-outline" onClick={refreshApps}>Atualizar lista ↻</button>}>
-          {count ? <div className="portal-app-grid">{visibleApps.map(item => <button key={`${item.source}:${item.id}`} onClick={() => openApp(item)}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span className="portal-app-info"><strong>{item.label}</strong><small>{appProfile[item.profile]} · {item.id}</small><span>{item.source === 'manager' ? appStatus[item.status] || appStatus.unknown : 'ValtrexCloud vinculado'}</span></span><span className="portal-arrow">{item.cloudId ? 'Gerenciar' : 'Detalhes'} →</span></button>)}</div> : <Empty title="Nenhuma aplicação vinculada" text="Abra /painel → ValtrexCloud no seu bot e vincule sua conta Discord como proprietária. Depois atualize a lista."/>}</Section></>}
+      {tab === 'overview' && preferences.expiryNotice && expiringApps.length > 0 && <div className="portal-expiry-notice" role="status"><span>◷</span><div><strong>Confira seus planos</strong><p>{expiringApps.map(item => `${item.label}: ${expiryLabel(item.expiresAt)}`).join(' · ')}</p></div><button onClick={() => setTab('subscriptions')}>Ver detalhes →</button></div>}
+      {tab === 'overview' && <><div className="cloud-overview-label"><span>WORKSPACE PESSOAL</span><span>◈ &nbsp; UMA VISÃO DO QUE IMPORTA</span></div><div className="portal-stats"><button onClick={() => setTab('apps')}><span className="portal-stat-icon"><Icon name="apps" size={23}/></span><span className="portal-stat-copy"><span>Aplicações vinculadas</span><strong>{count}</strong><small>Na sua conta Discord</small></span><span className="portal-stat-arrow">→</span></button><button onClick={() => setTab('logs')}><span className="portal-stat-icon"><Icon name="cloud" size={23}/></span><span className="portal-stat-copy"><span>Verificações</span><strong>{config?.verified ?? '—'}</strong><small>{app ? `Em ${app.label}` : 'Selecione uma aplicação'}</small></span><span className="portal-stat-arrow">→</span></button><button onClick={() => setTab('cloud')}><span className="portal-stat-icon"><Icon name="cloud" size={23}/></span><span className="portal-stat-copy"><span>Status do Cloud</span><strong className="portal-stat-status">{config ? config.secretConfigured ? 'Configurado' : 'Pendente' : '—'}</strong><small>{config?.secretConfigured ? 'OAuth2 cadastrado' : 'Confira a autenticação'}</small></span><span className="portal-stat-arrow">→</span></button></div>
+        {app && <SetupChecklist config={config} open={setTab}/>}<div className="cloud-quick-actions"><button onClick={() => setTab('verification')}>◇ &nbsp; Configurar verificação <span>→</span></button><button onClick={() => setTab('gifts')}>✦ &nbsp; Gerenciar Gifts <span>→</span></button><button onClick={() => setTab('appearance')}>◐ &nbsp; Personalizar página <span>→</span></button></div><Section eyebrow="SUAS APLICAÇÕES" title="Suas aplicações" description="Todas as aplicações vinculadas à sua conta Discord." action={<button className="portal-outline" onClick={refreshApps} disabled={refreshing}>{refreshing ? 'Atualizando…' : 'Atualizar lista ↻'}</button>}>
+          {count ? <div className={`portal-app-grid cloud-layout-${preferences.layout}`}>{filterApps(visibleApps, '', 'all', preferences.sort).slice(0,6).map(item => <button key={`${item.source}:${item.id}`} onClick={() => openApp(item)}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span className="portal-app-info"><strong>{item.label}</strong><small>{appProfile[item.profile]} · {item.id}</small><span>{item.source === 'manager' ? appStatus[item.status] || appStatus.unknown : 'Cloud vinculado'}</span></span><span className="portal-arrow">{item.cloudId ? 'Gerenciar' : 'Detalhes'} →</span></button>)}</div> : <Empty title="Nenhuma aplicação vinculada" text="Abra /painel → Cloud no seu bot e vincule sua conta Discord como proprietária. Depois atualize a lista."/>}</Section></>}
       {tab === 'apps' && <Section eyebrow="APLICAÇÕES" title="Seus bots" description="Dados do Cloud compartilhado, vinculados à identidade autorizada no Discord.">
-        {count ? <><div className="portal-list">{visibleApps.map(item => <button key={`${item.source}:${item.id}`} onClick={() => openApp(item)}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span><strong>{item.label}</strong><small>{appProfile[item.profile]} · {item.source === 'manager' ? appStatus[item.status] || appStatus.unknown : 'Cloud vinculado'}</small></span><span className="portal-list-end">{item.cloudId ? 'Gerenciar Cloud' : 'Detalhes'} ↗</span></button>)}</div>
-          {selectedManaged && !selectedManaged.cloudId && <div className="portal-managed-detail"><h3>{selectedManaged.label}</h3><dl><div><dt>Aplicação</dt><dd>{selectedManaged.id}</dd></div><div><dt>Produto</dt><dd>{appProfile[selectedManaged.profile]}</dd></div><div><dt>Plano</dt><dd>{appStatus[selectedManaged.status] || appStatus.unknown}</dd></div><div><dt>Vencimento</dt><dd>{selectedManaged.expiresAt ? new Date(selectedManaged.expiresAt).toLocaleString('pt-BR') : 'Não informado'}</dd></div></dl><p>Para renovar o plano ou configurar o bot, use o servidor oficial no Discord. O ValtrexCloud aparece aqui quando for vinculado no /painel do bot.</p></div>}</> : <Empty title="Sem aplicações" text="A vinculação depende do proprietário salvo no Manager ou no ValtrexCloud de cada bot."/>}</Section>}
+        <AppToolbar query={query} setQuery={setQuery} status={statusFilter} setStatus={setStatusFilter} preferences={preferences} update={updatePreferences}/><p className="cloud-result-count">{matchingApps.length} de {count} aplicação(ões)</p>{matchingApps.length ? <><div className={`portal-list cloud-layout-${preferences.layout}`}>{matchingApps.map(item => <button key={`${item.source}:${item.id}`} onClick={() => openApp(item)}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><span><strong>{item.label}</strong><small>{appProfile[item.profile]} · {item.source === 'manager' ? appStatus[item.status] || appStatus.unknown : 'Cloud vinculado'}</small></span><span className="portal-list-end">{item.cloudId ? 'Gerenciar Cloud' : 'Detalhes'} ↗︎</span></button>)}</div>
+          {selectedManaged && !selectedManaged.cloudId && <div className="portal-managed-detail"><h3>{selectedManaged.label}</h3><dl><div><dt>Aplicação</dt><dd>{selectedManaged.id}</dd></div><div><dt>Produto</dt><dd>{appProfile[selectedManaged.profile]}</dd></div><div><dt>Plano</dt><dd>{appStatus[selectedManaged.status] || appStatus.unknown}</dd></div><div><dt>Vencimento</dt><dd>{selectedManaged.expiresAt ? new Date(selectedManaged.expiresAt).toLocaleString('pt-BR') : 'Não informado'}</dd></div></dl><p>Para renovar o plano ou configurar o bot, use o servidor oficial no Discord. O Cloud aparece aqui quando for vinculado no /painel do bot.</p></div>}</> : <Empty title={count ? 'Nenhum resultado' : 'Sem aplicações'} text={count ? 'Tente outro nome, ID ou estado do plano.' : 'A vinculação depende do proprietário salvo no Manager ou no Cloud de cada bot.'}/>}</Section>}
       {tab === 'verification' && <Section eyebrow="VERIFICAÇÃO" title="Acesso ao servidor" description="O botão publicado pelo bot cria uma autorização individual no Discord para cada pessoa.">
-        {config ? <div className="portal-verification-grid"><div className="portal-verification-card"><span className="portal-overline">ESTADO ATUAL</span><h3>{config.secretConfigured && config.guildId ? 'Pronta para publicar' : 'Configuração pendente'}</h3><p>{config.secretConfigured && config.guildId ? 'Publique ou atualize o botão pelo /painel → ValtrexCloud → Autenticação no servidor principal.' : 'Cadastre o Client Secret e o servidor principal para ativar a verificação.'}</p><dl><div><dt>Contas verificadas</dt><dd>{config.verified ?? '—'}</dd></div><div><dt>Servidor principal</dt><dd>{config.guildId || 'Não definido'}</dd></div><div><dt>Cargo automático</dt><dd>{config.roleId || 'Não definido'}</dd></div><div><dt>Canal publicado</dt><dd>{config.verifyChannelId || 'Ainda não publicado'}</dd></div></dl><div className="portal-actions"><button className="portal-primary" onClick={() => setTab('cloud')}>Configurar OAuth2 →</button><button className="portal-outline" onClick={() => setTab('appearance')}>Personalizar página</button></div></div><div className="portal-verification-aside"><span>COMO A PESSOA VÊ</span><strong>Verificar → Autorizar no Discord → Resultado</strong><p>A tela oficial mostra as permissões antes de qualquer acesso. Após autorizar, a pessoa chega à página de conclusão com a aparência da sua aplicação.</p><button onClick={async () => { try { const result = await call('/preview', { method: 'POST' }); window.open(result.link, '_blank', 'noopener,noreferrer'); } catch (err) { setError(err.message); } }}>Abrir prévia da página ↗</button></div></div> : <Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para ver a verificação."/>}</Section>}
+        {config ? <div className="portal-verification-grid"><div className="portal-verification-card"><span className="portal-overline">ESTADO ATUAL</span><h3>{config.secretConfigured && config.guildId ? 'Pronta para publicar' : 'Configuração pendente'}</h3><p>{config.secretConfigured && config.guildId ? 'Publique ou atualize o botão pelo /painel → Cloud → Autenticação no servidor principal.' : 'Cadastre o Client Secret e o servidor principal para ativar a verificação.'}</p><dl><div><dt>Contas verificadas</dt><dd>{config.verified ?? '—'}</dd></div><div><dt>Servidor principal</dt><dd>{config.guildId || 'Não definido'}</dd></div><div><dt>Cargo automático</dt><dd>{config.roleId || 'Não definido'}</dd></div><div><dt>Canal publicado</dt><dd>{config.verifyChannelId || 'Ainda não publicado'}</dd></div></dl><div className="portal-actions"><button className="portal-primary" onClick={() => setTab('cloud')}>Configurar OAuth2 →</button><button className="portal-outline" onClick={() => setTab('appearance')}>Personalizar página</button></div></div><div className="portal-verification-aside"><span>COMO A PESSOA VÊ</span><strong>Verificar → Autorizar no Discord → Resultado</strong><p>A tela oficial mostra as permissões antes de qualquer acesso. Após autorizar, a pessoa chega à página de conclusão com a aparência da sua aplicação.</p><button onClick={openPreview}>Abrir prévia da página ↗︎</button></div></div> : <Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para ver a verificação."/>}</Section>}
       {tab === 'subscriptions' && <Section eyebrow="PLANOS" title="Planos e renovação" description="Consulte o prazo de cada bot. A compra e a renovação acontecem no servidor oficial no Discord.">
         {visibleApps.some(item => item.source === 'manager') ? <div className="portal-subscription-list">{visibleApps.filter(item => item.source === 'manager').map(item => <article key={item.id}><span className="portal-app-icon">{item.label.slice(0, 1).toUpperCase()}</span><div><h3>{item.label}</h3><p>{appProfile[item.profile]} · {appStatus[item.status] || appStatus.unknown}</p><strong>{expiryLabel(item.expiresAt)}</strong><small>{item.expiresAt && !Number.isNaN(new Date(item.expiresAt).getTime()) ? new Date(item.expiresAt).toLocaleString('pt-BR') : 'Data ainda não enviada pelo Manager'}</small></div></article>)}</div> : <Empty title="Nenhum plano vinculado" text="Os planos aparecem quando o Manager sincroniza os bots da sua conta Discord."/>}
-        <div className="portal-subscription-actions"><a className="portal-primary" href="/plans">Comparar planos →</a>{catalog.officialInvite ? <a className="portal-outline" href={catalog.officialInvite} target="_blank" rel="noopener noreferrer">Comprar ou renovar no Discord ↗</a> : <span>O convite oficial aparecerá após ser configurado no Manager.</span>}</div></Section>}
-      {tab === 'cloud' && <Section eyebrow="VALTREXCLOUD" title="Autenticação Discord" description="O Client Secret permanece somente no backend. O formulário nunca mostra o valor salvo.">
+        <div className="portal-subscription-actions"><a className="portal-primary" href="/plans">Comparar planos →</a>{catalog.officialInvite ? <a className="portal-outline" href={catalog.officialInvite} target="_blank" rel="noopener noreferrer">Comprar ou renovar no Discord ↗︎</a> : <span>O convite oficial aparecerá após ser configurado no Manager.</span>}</div></Section>}
+      {tab === 'cloud' && <Section eyebrow="CLOUD" title="Autenticação Discord" description="O Client Secret permanece somente no backend. O formulário nunca mostra o valor salvo.">
         {config ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ label: config.label, clientId: config.clientId || appId,
           clientSecret: secret || undefined, guildId: config.guildId || null, backupGuildId: config.backupGuildId || null,
           roleId: config.roleId || null, logChannelId: config.logChannelId || null }); }}>
-          <div className="portal-keyline"><span>REDIRECT URI PARA O DISCORD DEVELOPER PORTAL</span><code>{config.redirectUri}</code><button type="button" onClick={() => navigator.clipboard?.writeText(config.redirectUri)}>Copiar</button></div>
+          <div className="portal-keyline"><span>REDIRECT URI PARA O DISCORD DEVELOPER PORTAL</span><code>{config.redirectUri}</code><button type="button" onClick={() => copyText(config.redirectUri)}>Copiar</button></div>
           <p className="portal-help">Cadastre esta URL exatamente em OAuth2 → Redirects da aplicação Discord. Ao trocar o domínio, atualize também esse campo no Developer Portal.</p>
           <div className="portal-fields"><Field label="Nome da loja" value={config.label} onChange={value => setConfig({ ...config, label: value })}/>
             <Field label="Client ID" value={config.clientId || appId} onChange={value => setConfig({ ...config, clientId: value })}/>
@@ -229,18 +258,21 @@ export default function Dashboard() {
           <Field label="Validade em dias (vazio = sem prazo)" type="number" value={giftForm.expiresDays} onChange={value => setGiftForm({ ...giftForm, expiresDays: value })}/><Field label="Quantos Gifts gerar (1 a 10)" type="number" value={giftForm.count} onChange={value => setGiftForm({ ...giftForm, count: value })}/><Field label="Banner HTTPS (opcional)" value={giftForm.banner} onChange={value => setGiftForm({ ...giftForm, banner: value })}/></div>
           <label className="portal-field"><span>Descrição pública</span><textarea value={giftForm.description} onChange={event => setGiftForm({ ...giftForm, description: event.target.value })}/></label>
           <button className="portal-primary" disabled={saving || !giftForm.title || !giftForm.name}>Criar Gift →</button></form>
-          <div className="portal-subsection"><h3>Gifts criados <span>{gifts.length}</span></h3>{gifts.length ? <div className="portal-list">{gifts.map(gift => <div className="portal-gift-row" key={gift.id}><span className="portal-app-icon">✦</span><span><strong>{gift.name}</strong><small>{gift.status} · {gift.uses} usos · limite {gift.memberLimit} membros</small></span>
-            <button onClick={() => navigator.clipboard?.writeText(gift.link)}>Copiar link</button><button disabled={saving} onClick={() => toggleGift(gift)}>{gift.active ? 'Desativar' : 'Ativar'}</button></div>)}</div> : <Empty title="Nenhum Gift ainda" text="Crie o primeiro link acima. Ele terá um token aleatório e pertencerá somente a esta aplicação."/>}</div></> : <Empty title="Escolha uma aplicação" text="Vincule um bot para gerenciar seus Gifts."/>}</Section>}
+          {createdLinks.length > 0 && <div className="cloud-created-gifts" role="status"><strong>{createdLinks.length} link(s) criado(s)</strong><p>Copie os links abaixo. Eles não são salvos nas preferências do navegador.</p><textarea aria-label="Links criados" readOnly value={createdLinks.join('\n')}/><button type="button" className="portal-outline" onClick={() => copyText(createdLinks.join('\n'))}>Copiar todos</button></div>}<div className="portal-subsection"><h3>Gifts criados <span>{gifts.length}</span></h3>{gifts.length ? <div className="portal-list">{gifts.map(gift => <div className="portal-gift-row" key={gift.id}><span className="portal-app-icon">✦</span><span><strong>{gift.name}</strong><small>{gift.status} · {gift.uses} usos · limite {gift.memberLimit} membros</small></span>
+            <button onClick={() => copyText(gift.link)}>Copiar link</button><button disabled={saving} onClick={() => toggleGift(gift)}>{gift.active ? 'Desativar' : 'Ativar'}</button></div>)}</div> : <Empty title="Nenhum Gift ainda" text="Crie o primeiro link acima. Ele terá um token aleatório e pertencerá somente a esta aplicação."/>}</div></> : <Empty title="Escolha uma aplicação" text="Vincule um bot para gerenciar seus Gifts."/>}</Section>}
       {tab === 'appearance' && <Section eyebrow="APARÊNCIA" title="Sua página, sua identidade" description="As cores e textos são isolados por aplicação. A prévia não consome Gift.">
-        {config?.theme ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ theme: config.theme }); }}><div className="portal-fields">
+        {config?.theme ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ theme: config.theme }); }}><div className="cloud-appearance-tools"><div><h3>Comece por uma paleta</h3><p>Aplique, ajuste e salve quando estiver satisfeito.</p></div><div className="cloud-swatches">{Object.entries(PALETTES).map(([key, color]) => <button key={key} type="button" onClick={() => setConfig({ ...config, theme: { ...config.theme, primary: color, secondary: color, background: '#0b1115', card: '#111c22', border: '#2b3a41', text: '#eff6f4' } })}><i style={{ background: color }}/>{({ mint: 'Verde-água', blue: 'Azul céu', amber: 'Âmbar' })[key]}</button>)}</div></div><label className="cloud-radius">Arredondamento dos cards <input type="range" min="4" max="32" value={config.theme.radius ?? 22} onChange={e => setConfig({ ...config, theme: { ...config.theme, radius: Number(e.target.value) } })}/><span>{config.theme.radius ?? 22}px</span></label><div className="portal-fields">
           {['name', 'title', 'description', 'logo', 'banner', 'backgroundImage', 'loadingTitle', 'loadingDescription', 'loadingBackgroundImage', 'button', 'footer'].map(key => <Field key={key} label={{ name: 'Nome da loja', title: 'Título', description: 'Descrição', logo: 'Logo HTTPS', banner: 'Banner HTTPS', backgroundImage: 'Fundo da página HTTPS', loadingTitle: 'Título do carregamento', loadingDescription: 'Descrição do carregamento', loadingBackgroundImage: 'Fundo do carregamento HTTPS', button: 'Texto do botão', footer: 'Rodapé' }[key]}
             value={config.theme[key]} onChange={value => setConfig({ ...config, theme: { ...config.theme, [key]: value } })}/>)}
           {['primary', 'secondary', 'text', 'background', 'card', 'border'].map(key => <Field key={key} label={{ primary: 'Cor principal', secondary: 'Cor secundária', text: 'Texto', background: 'Fundo', card: 'Card', border: 'Borda' }[key]}
             type="color" value={config.theme[key] || '#101010'} onChange={value => setConfig({ ...config, theme: { ...config.theme, [key]: value } })}/>)}</div>
-          <div className="portal-actions"><button className="portal-primary" disabled={saving}>Salvar aparência</button><button type="button" className="portal-outline" disabled={saving} onClick={async () => { try { const result = await call('/preview', { method: 'POST' }); window.open(result.link, '_blank', 'noopener,noreferrer'); } catch (err) { setError(err.message); } }}>Abrir prévia ↗</button><button type="button" className="portal-text-danger" disabled={saving} onClick={resetTheme}>Resetar aparência</button></div></form>
+          <div className="portal-actions"><button className="portal-primary" disabled={saving}>Salvar aparência</button><button type="button" className="portal-outline" disabled={saving} onClick={openPreview}>Abrir prévia ↗︎</button><button type="button" className="portal-text-danger" disabled={saving} onClick={resetTheme}>Resetar aparência</button></div></form>
           : <Empty title="Carregando aparência" text="Aguarde a consulta ao backend."/>}</Section>}
-      {tab === 'logs' && <Section eyebrow="ATIVIDADE" title="Histórico do Cloud" description="Eventos da aplicação selecionada. Credenciais e tokens não aparecem aqui.">
-        {logs.length ? <div className="portal-timeline">{logs.map((item, index) => <div key={`${item.created_at}-${index}`}><span className="portal-timeline-dot"/><div><strong>{item.event.replaceAll('_', ' ')}</strong><small>{new Date(item.created_at).toLocaleString('pt-BR')}</small></div></div>)}</div> : <Empty title="Sem eventos registrados" text="Os eventos de verificação, Gifts e alterações aparecerão aqui."/>}</Section>}
-    </main><footer className="portal-footer">Valtrex Applications <span>·</span> Sessão Discord segura <span>·</span> Dados separados por aplicação</footer></div>
+      {tab === 'logs' && <Section eyebrow="ATIVIDADE" title="Histórico do Cloud" description="Pesquise e exporte os eventos carregados da aplicação selecionada.">
+        {app ? <ActivityPanel key={appId} logs={logs} onError={setError} refresh={async () => { const result = await call('/logs'); setLogs(result.logs || []); }}/>
+          : <Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para consultar sua atividade."/>}</Section>}
+      {tab === 'preferences' && <Section eyebrow="SEU WORKSPACE" title="Um painel com a sua cara" description="Cores, organização e conforto visual, salvos neste navegador."><PreferencesPanel value={preferences} update={updatePreferences}/></Section>}
+      {tab === 'help' && <Section eyebrow="CENTRAL DE AJUDA" title="O próximo passo, sem dúvidas." description="Orientações para aplicações, comunidade e conta."><HelpPanel invite={catalog.officialInvite}/></Section>}
+    </main><footer className="portal-footer">Cloud <span>·</span> Sessão Discord segura <span>·</span> Dados separados por aplicação</footer></div>
   </div>;
 }

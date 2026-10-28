@@ -574,6 +574,7 @@ async function portal(req: Request, path: string) {
         !equal(req.headers.get('x-valtrex-csrf') || '', await open(session.csrf_cipher)))
       return json({ error: 'Solicitação não autorizada.' }, 403);
   }
+  if(path.startsWith('platform/'))return platformPortal(req,path.slice(9),session);
   if (path === 'me' && req.method === 'GET') {
     const [{ data: apps, error }, { data: managedApps, error: managedError }] = await Promise.all([
       db.from('valtrex_tenants').select('id,label,client_id,guild_id,role_id,bot_seen_at,created_at')
@@ -582,7 +583,8 @@ async function portal(req: Request, path: string) {
         .eq('owner_user_id', session.discord_user_id).order('synced_at', { ascending: false }),
     ]);
     if (error || managedError) return json({ error: 'Não foi possível carregar suas aplicações.' }, 503);
-    return json({ user: { id: session.discord_user_id, name: session.username,
+    const {data:platform}=await db.from('valtrex_manager_web').select('administrator_ids').eq('id',1).maybeSingle();
+    return json({ isPlatformAdmin:Array.isArray(platform?.administrator_ids)&&platform.administrator_ids.includes(session.discord_user_id), user: { id: session.discord_user_id, name: session.username,
       avatar: session.avatar_hash ? `https://cdn.discordapp.com/avatars/${session.discord_user_id}/${session.avatar_hash}.png?size=128` : '' },
       apps: apps || [], managedApps: managedApps || [], csrf: await open(session.csrf_cipher), loginTenantId: session.login_tenant_id });
   }
@@ -606,14 +608,16 @@ async function portal(req: Request, path: string) {
 async function managerIdentity(req: Request) {
   const token = (req.headers.get('authorization') || '').match(/^Bot ([A-Za-z0-9._-]{40,200})$/)?.[1];
   if (!token) return json({ error: 'Acesso negado.' }, 401);
-  const managerId = Deno.env.get('VALTREX_MANAGER_BOT_ID') || PORTAL_CLIENT_ID;
+  const configuredManagerId = Deno.env.get('VALTREX_MANAGER_BOT_ID');
+  const managerIds = new Set([configuredManagerId || PORTAL_CLIENT_ID]);
+  if (PORTAL_CLIENT_ID === '1506929376967790752' && (!configuredManagerId || configuredManagerId === PORTAL_CLIENT_ID)) managerIds.add('1564896147699400744');
   try {
     const response = await fetch('https://discord.com/api/v10/users/@me', {
       headers: { authorization: `Bot ${token}` }, signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) return json({ error: 'Credencial não autorizada.' }, 401);
     const identity = await response.json();
-    if (identity.bot !== true || identity.id !== managerId) return json({ error: 'Aplicação não autorizada.' }, 403);
+    if (identity.bot !== true || !managerIds.has(identity.id)) return json({ error: 'Aplicação não autorizada.' }, 403);
   } catch { return json({ error: 'Não foi possível validar o Manager no Discord.' }, 503); }
   return null;
 }
@@ -919,6 +923,10 @@ async function portalNotices(req:Request,path:string,userId:string) {
 async function managerSite(req:Request,path:string) {
   if(!(await limit(req,'manager_site',30)))return json({error:'Aguarde antes de continuar.'},429);
   const denied=await managerIdentity(req); if(denied)return denied;
+  if(path.startsWith('control/'))return managerControls(req,path.slice(8));
+  return managerSiteData(req,path);
+}
+async function managerSiteData(req:Request,path:string){
   if(path.startsWith('support'))return managerSupport(req,path);
   if(path==='notifications'&&req.method==='GET') {
     const {data,error}=await db.from('valtrex_site_notices').select('id,title,message,link,target_user_id,created_at,expires_at,archived').order('created_at',{ascending:false}).limit(30);
@@ -1040,6 +1048,52 @@ async function managerSupport(req:Request,path:string) {
  return error?json({error:'Encerramento não confirmado.'},503):json({ok:true});
  }
  return json({error:'Método inválido.'},405);
+}
+
+
+async function platformPortal(req:Request,path:string,session:any){
+ const {data:control}=await db.from('valtrex_manager_web').select('*').eq('id',1).maybeSingle();
+ if(!Array.isArray(control?.administrator_ids)||!control.administrator_ids.includes(session.discord_user_id))return json({error:'Acesso restrito à administração do projeto.'},403);
+ if(path==='status'&&req.method==='GET'){
+  const {data:jobs,error}=await db.from('valtrex_manager_commands').select('id,kind,state,created_at,finished_at,result').order('created_at',{ascending:false}).limit(30);
+  return error?json({error:'Operações indisponíveis.'},503):json({status:control.status,seenAt:control.seen_at,jobs:jobs||[]});
+ }
+ if(path==='commands'&&req.method==='POST'){
+  const input=await body(req);if(!uuidPattern.test(input.clientId||'')||!['update_bot','host_test','site_url','gateway_save'].includes(input.kind)||!input.payload||typeof input.payload!=='object')return json({error:'Operação inválida.'},400);
+  if(!(await limit(req,`platform_command:${session.discord_user_id}`,15)))return json({error:'Aguarde antes de enviar outra operação.'},429);
+  const payload=input.payload;
+  if(input.kind==='update_bot'&&!/^[\w-]{1,120}$/.test(payload.appId||''))return json({error:'Aplicação inválida.'},400);
+  if(input.kind==='host_test'&&(!['enzonic','xsystem','altare','heaven','monkey','doki','discloud','phanom','shardcloud'].includes(payload.provider)||!Number.isInteger(payload.slot)||payload.slot<1||payload.slot>16))return json({error:'Servidor inválido.'},400);
+  if(input.kind==='site_url'){try{const u=new URL(payload.url);if(u.protocol!=='https:'||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw new Error();}catch{return json({error:'Use somente o domínio HTTPS do site.'},400);}}
+  if(input.kind==='gateway_save'&&(payload.gateway!=='goatpay'||typeof payload.enabled!=='boolean'||payload.apiKey!==undefined&&(typeof payload.apiKey!=='string'||payload.apiKey.length>400||/[\s\x00-\x1f]/.test(payload.apiKey))))return json({error:'Configuração de gateway inválida.'},400);
+  const {data:prior}=await db.from('valtrex_manager_commands').select('*').eq('id',input.clientId).maybeSingle();
+  const serialized=JSON.stringify({kind:input.kind,payload});
+  if(prior)return prior.actor_id===session.discord_user_id&&await open(prior.payload_cipher)===serialized?json({id:prior.id,state:prior.state,repeated:true}):json({error:'Identificador já usado por outra operação.'},409);
+  const {data,error}=await db.from('valtrex_manager_commands').insert({id:input.clientId,actor_id:session.discord_user_id,kind:input.kind,payload_cipher:await seal(serialized)}).select('id,state').single();
+  if(error?.code==='23505'){const {data:r}=await db.from('valtrex_manager_commands').select('*').eq('id',input.clientId).maybeSingle();if(r?.actor_id===session.discord_user_id&&await open(r.payload_cipher)===serialized)return json({id:r.id,state:r.state,repeated:true});}
+  return error?json({error:'Operação não confirmada. Repita mantendo os campos.'},503):json(data,202);
+ }
+ if(path.startsWith('support/')&&path.endsWith('/reply')&&req.method==='POST'){
+  const input=await body(req);const safe=new Request(req.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...input,actorId:session.discord_user_id})});return managerSiteData(safe,path);
+ }
+ return managerSiteData(req,path);
+}
+async function managerControls(req:Request,path:string){
+ if(path==='poll'&&req.method==='POST'){
+  const input=await body(req,180000);if(!Array.isArray(input.administrators)||input.administrators.length>100||input.administrators.some((id:any)=>!validId(id))||!input.status||typeof input.status!=='object')return json({error:'Estado de administração inválido.'},400);
+  // Only fixed public fields are stored; credentials and arbitrary environment variables are discarded.
+  const status={siteUrl:typeof input.status.siteUrl==='string'?input.status.siteUrl.slice(0,250):'',hosts:(input.status.hosts||[]).slice(0,150).map((h:any)=>({provider:String(h.provider).slice(0,20),slot:Number(h.slot),runtime:String(h.runtime).slice(0,30),serverId:String(h.serverId||'').slice(0,64)})),apps:(input.status.apps||[]).slice(0,500).map((a:any)=>({id:String(a.id).slice(0,120),label:String(a.label).slice(0,80)})),goatpay:{enabled:input.status.goatpay?.enabled===true,configured:input.status.goatpay?.configured===true}};
+  const {error}=await db.from('valtrex_manager_web').upsert({id:1,administrator_ids:[...new Set(input.administrators)],status,seen_at:new Date().toISOString()});if(error)return json({error:'Estado não salvo.'},503);
+  const {data,error:claimError}=await db.rpc('valtrex_claim_manager_commands');if(claimError)return json({error:'Fila indisponível.'},503);
+  const commands=[];for(const row of data||[]){const decoded=JSON.parse(await open(row.payload_cipher));commands.push({id:row.id,actorId:row.actor_id,kind:row.kind,payload:decoded.payload,lease:row.lease});}return json({commands});
+ }
+ if(path==='result'&&req.method==='POST'){
+  const input=await body(req);if(!uuidPattern.test(input.id||'')||!uuidPattern.test(input.lease||'')||!['done','failed','uncertain'].includes(input.state))return json({error:'Resultado inválido.'},400);
+  const code=String(input.code||'').replace(/[^A-Z0-9_]/gi,'').slice(0,64);const messages:Record<string,string>={done:'Operação confirmada pelo Manager.',failed:'O Manager não concluiu a operação. Confira o diagnóstico e as permissões.',uncertain:'Confirmação pendente. Confira a aplicação antes de repetir.'};
+  const {data,error}=await db.from('valtrex_manager_commands').update({state:input.state,result:{code,message:messages[input.state],...(input.state==='done'&&input.kind==='host_test'?{diagnostic:input.ok===true?'Disponível':'Não disponível'}:{})},finished_at:new Date().toISOString()}).eq('id',input.id).eq('lease',input.lease).in('state',['processing','uncertain']).select('id').maybeSingle();
+  if(error)return json({error:'Confirmação não salva.'},503);if(!data){const {data:r}=await db.from('valtrex_manager_commands').select('state').eq('id',input.id).eq('lease',input.lease).maybeSingle();if(r?.state===input.state)return json({ok:true,repeated:true});return json({error:'Tentativa não reconhecida.'},409);}return json({ok:true});
+ }
+ return json({error:'Rota não encontrada.'},404);
 }
 
 // Private per-application AI settings and Discord ticket mailbox.

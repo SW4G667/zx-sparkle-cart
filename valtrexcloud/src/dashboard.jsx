@@ -1,3 +1,4 @@
+import PlatformAdmin from './platform-admin.jsx';
 import {AISettings,TicketInbox,TicketSettings} from './service-workspace.jsx';
 import GiftStudio from './gift-studio.jsx';
 import React, { useEffect, useState, useRef } from 'react';
@@ -11,7 +12,7 @@ import { ProductsPanel, NotificationCenter, VerificationAppearance } from './sto
 import { FinancePanel, SupportChat } from './finance-chat.jsx';
 
 const apiRoot = '/api/portal';
-const nav = [['overview','Visão geral'],['apps','Aplicações'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['help','Ajuda']];
+const nav = [['overview','Visão geral'],['apps','Aplicações'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['platform','Administração'],['help','Ajuda']];
 function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true"><Icon name="cloud" size={24}/></span><span>{BRAND}<span className="portal-brand-light">SEU WORKSPACE</span></span></a>; }
 
 async function request(path, { method = 'GET', data, csrf } = {}) {
@@ -212,7 +213,7 @@ export default function Dashboard() {
     <div className="portal-app-select"><span>Cloud da aplicação</span><select aria-label="Aplicação atual" value={appId} onChange={e => { setAppId(e.target.value); setTab('overview'); }} disabled={saving || !session.apps?.length}>
       {!session.apps?.length && <option value="">Nenhum bot configurado</option>}
       {session.apps?.map(item => <option key={item.id} value={item.id}>{displayName(item.label)}{!preferences.hideIds && ` · ${item.id.slice(-4)}`}</option>)}</select></div>
-    <nav aria-label="Navegação do painel">{nav.map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} className={tab === key ? 'active' : ''}
+    <nav aria-label="Navegação do painel">{nav.filter(([key])=>key!=='platform'||session.isPlatformAdmin).map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} className={tab === key ? 'active' : ''}
       onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><Icon name={key==='cloud'?'shield':key}/><span>{label}</span></button>)}</nav>
     <a className="portal-sidebar-plans" href="/plans"><Icon name="subscriptions"/>Conhecer os planos<Icon name="external" size={14}/></a>
     <div className="portal-sidebar-bottom"><div className="portal-user">{session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span>{session.user.name.slice(0, 1).toUpperCase()}</span>}
@@ -249,6 +250,7 @@ export default function Dashboard() {
           <button className="portal-primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar autenticação'}</button></form> : <Empty title="Carregando autenticação" text="Aguarde a consulta ao backend."/>}</Section>}
       {tab === 'gifts' && <Section eyebrow="GIFTS" title="Seu estúdio de links" description="Crie lotes, personalize o convite e acompanhe cada Gift.">{app?<GiftStudio key={appId} gifts={gifts} call={call} setGifts={setGifts}/>:<Empty title="Escolha uma aplicação" text="Vincule um bot para gerenciar seus Gifts."/>}</Section>}
       {tab === 'finance' && <Section eyebrow="SUA OPERAÇÃO" title="Rendimentos com todos os detalhes" description="Vendas confirmadas, evolução e histórico financeiro da aplicação.">{app?<FinancePanel key={appId} appId={appId} request={request}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para consultar os rendimentos."/>}</Section>}
+      {tab === 'platform' && session.isPlatformAdmin && <Section eyebrow="ADMINISTRAÇÃO DO PROJETO" title="Controle da operação" description="Bots, servidores, gateway e atendimento no próprio site."><PlatformAdmin request={request} csrf={session.csrf}/></Section>}
       {tab === 'ai' && <Section eyebrow="INTELIGÊNCIA ARTIFICIAL" title="Conhecimento que atende" description="Conecte sua API, personalize a voz da loja e prepare respostas com a equipe.">{app?<AISettings key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para configurar a IA."/>}</Section>}
       {tab === 'tickets' && <Section eyebrow="TICKETS DE CLIENTES" title="Sua operação de atendimento" description="Acompanhe o Discord e responda pelo site com a identidade da sua loja.">{app?<TicketInbox key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot para consultar os tickets da loja."/>}</Section>}
       {tab === 'ticket-settings' && <Section eyebrow="PREFERÊNCIAS DE ATENDIMENTO" title="Do seu jeito, em cada resposta" description="Escolha bot ou webhook, personalize a apresentação e organize respostas rápidas.">{app?<TicketSettings key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot para configurar o atendimento."/>}</Section>}
@@ -269,6 +271,6 @@ export default function Dashboard() {
       {tab === 'help' && <Section eyebrow="CENTRAL DE AJUDA" title="O próximo passo, sem dúvidas." description="Orientações para aplicações, comunidade e conta."><HelpPanel invite={catalog.officialInvite}/></Section>}
     </main><footer className="portal-footer">Cloud <span>·</span> Conectado ao Discord <span>·</span> Dados separados por aplicação</footer></div>
   <nav className="mobile-nav" aria-label="Navegação rápida">{[['overview','Início','overview'],['apps','Apps','apps'],['products','Loja','products'],['finance','Receita','revenue']].map(([key,label,icon])=><button key={key} aria-current={tab===key?'page':undefined} onClick={()=>{setTab(key);setMenuOpen(false)}}><Icon name={icon} size={20}/><span>{label}</span></button>)}<button aria-expanded={menuOpen} aria-label="Abrir menu completo" onClick={()=>setMenuOpen(value=>!value)}><Icon name="menu" size={20}/><span>Menu</span></button></nav>
-  {commandOpen&&<CommandMenu apps={visibleApps} navigation={nav} selectTab={setTab} openApp={openApp} close={()=>setCommandOpen(false)}/>}
+  {commandOpen&&<CommandMenu apps={visibleApps} navigation={nav.filter(([key])=>key!=='platform'||session.isPlatformAdmin)} selectTab={setTab} openApp={openApp} close={()=>setCommandOpen(false)}/>}
   </div>;
 }

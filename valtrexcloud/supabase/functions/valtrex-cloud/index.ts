@@ -473,30 +473,49 @@ async function admin(req: Request, path: string, authenticatedTenant: any = null
     const gifts = await Promise.all((data || []).map(async (gift: any) => ({ id: gift.id, name: gift.internal_name,
       title: gift.title, description: gift.description, banner: gift.banner_url, active: gift.active, kind: gift.kind,
       status: giftState(gift), uses: gift.uses, maxUses: gift.max_uses, memberLimit: gift.member_limit, expiresAt: gift.expires_at,
-      createdAt: gift.created_at, theme: gift.theme, link: `${BASE}/g/${await open(gift.token_cipher)}` })));
+      createdAt: gift.created_at, theme: gift.theme, successMessage: gift.success_message, link: `${BASE}/g/${await open(gift.token_cipher)}` })));
     return json({ gifts, total: count || 0, page, pages: Math.max(1, Math.ceil((count || 0) / 25)) });
   }
   if (path === 'gifts' && req.method === 'POST') {
+    if (!(await limit(req,'gift_create',30))) return json({error:'Aguarde antes de criar outro lote.'},429);
     const input = await body(req);
-    const title = String(input.title || '').trim().slice(0, 100);
-    const name = String(input.name || title).trim().slice(0, 100);
+    const title = String(input.title || '').trim();
+    const name = String(input.name || title).trim();
     const max = input.maxUses === null || input.maxUses === undefined ? null : Number(input.maxUses);
     const memberLimit = Number(input.memberLimit);
+    const count = input.count === undefined ? 1 : Number(input.count);
     const expires = input.expiresAt ? new Date(input.expiresAt) : null;
-    if (!title || !name || !Number.isSafeInteger(memberLimit) || memberLimit < 1 || memberLimit > 500 ||
-        (max !== null && (!Number.isSafeInteger(max) || max < 1)) ||
-        (expires && (!Number.isFinite(expires.getTime()) || expires.getTime() <= Date.now())))
-      return json({ error: 'Informe nome, título e limite de membros entre 1 e 500.' }, 400);
+    const requestId=input.requestId===undefined?crypto.randomUUID():String(input.requestId);
+    if (!title || title.length>100 || !name || name.length>100 || !Number.isSafeInteger(count)||count<1||count>10 ||
+        !/^[a-zA-Z0-9_-]{16,80}$/.test(requestId)||!Number.isSafeInteger(memberLimit)||memberLimit<1||memberLimit>500||
+        (max!==null&&(!Number.isSafeInteger(max)||max<1||max>2147483647)) ||
+        (expires&&(!Number.isFinite(expires.getTime())||expires.getTime()<=Date.now()||expires.getTime()>Date.now()+3650*86400000)))
+      return json({error:'Confira nome, título, validade, usos e quantidade do lote (1 a 10).'},400);
+    try{if(input.banner)validImage(input.banner);if(input.theme)cleanTheme(input.theme);}catch{return json({error:'O banner precisa ser um link HTTPS válido de imagem.'},400);}
     if (!tenant.client_id || !tenant.client_secret_cipher || !tenant.owner_user_id) return json({ error: 'Configure OAuth e vincule o proprietário antes de criar Gifts.' }, 409);
-    const token = randomToken(); const gift = { tenant_id: tenant.id, token_hash: await sha(token), token_cipher: await seal(token), kind: 'backup',
-      internal_name: name, title, description: String(input.description || '').slice(0, 500),
-      banner_url: validImage(input.banner), expires_at: expires?.toISOString() || null,
-      max_uses: max, member_limit: memberLimit, theme: input.theme ? cleanTheme(input.theme) : null,
-      success_message: String(input.successMessage || '').slice(0, 300) || null };
-    const { data, error } = await db.from('valtrex_gifts').insert(gift).select('id').single();
-    if (error) return json({ error: 'Falha ao criar Gift.' }, 500);
-    await log(tenant.id, 'gift_created', { gift_id: data.id });
-    return json({ id: data.id, link: `${BASE}/g/${token}` }, 201);
+    const drafts=[];
+    for(let i=0;i<count;i++){
+      const h=await sha(tenant.id+'\0gift-create\0'+requestId+'\0'+i);
+      const id=`${h.slice(0,8)}-${h.slice(8,12)}-4${h.slice(13,16)}-8${h.slice(17,20)}-${h.slice(20,32)}`;
+      const token=randomToken();drafts.push({id,tenant_id:tenant.id,token_hash:await sha(token),token_cipher:await seal(token),kind:'backup',
+        internal_name:count>1?`${name.slice(0,93)} ${i+1}`:name,title,description:String(input.description||'').slice(0,500),banner_url:validImage(input.banner),
+        expires_at:expires?.toISOString()||null,max_uses:max,member_limit:memberLimit,theme:input.theme?cleanTheme(input.theme):null,success_message:String(input.successMessage||'').slice(0,300)||null});
+    }
+    const ids=drafts.map(g=>g.id);
+    const existing=await db.from('valtrex_gifts').select('*').eq('tenant_id',tenant.id).in('id',ids);
+    if(existing.error)return json({error:'Não foi possível conferir este lote. Tente novamente sem alterar os dados.'},503);
+    const equal=(a:any,b:any)=>['internal_name','title','description','banner_url','expires_at','max_uses','member_limit','success_message'].every(k=>(a[k]??null)===(b[k]??null))&&JSON.stringify(a.theme??null)===JSON.stringify(b.theme??null);
+    if((existing.data||[]).some((g:any)=>!equal(g,drafts.find(d=>d.id===g.id))))return json({error:'Esta solicitação já foi usada com outros dados. Inicie um novo lote.'},409);
+    const missing=drafts.filter(g=>!(existing.data||[]).some((old:any)=>old.id===g.id));
+    if(missing.length){
+      const inserted=await db.from('valtrex_gifts').insert(missing);
+      if(inserted.error&&inserted.error.code!=='23505')return json({error:'A criação não foi confirmada. Repita o mesmo lote para recuperar os links, sem duplicar.'},503);
+    }
+    const result=await db.from('valtrex_gifts').select('*').eq('tenant_id',tenant.id).in('id',ids);
+    if(result.error||result.data?.length!==count||result.data.some((g:any)=>!equal(g,drafts.find(d=>d.id===g.id))))return json({error:'O lote ainda não pôde ser conferido. Repita a mesma solicitação.'},503);
+    const gifts=await Promise.all(ids.map(async id=>{const g=result.data.find((v:any)=>v.id===id);return {id,name:g.internal_name,link:`${BASE}/g/${await open(g.token_cipher)}`};}));
+    await log(tenant.id,'gift_batch_created',{count,requestId});
+    return json({...gifts[0],gifts,replayed:missing.length===0},missing.length?201:200);
   }
   const match = path.match(/^gifts\/([0-9a-f-]{36})$/);
   if (match && req.method === 'GET') {
@@ -504,16 +523,22 @@ async function admin(req: Request, path: string, authenticatedTenant: any = null
     if (!gift) return json({ error: 'Gift não encontrado.' }, 404);
     return json({ id: gift.id, name: gift.internal_name, title: gift.title, description: gift.description, kind: gift.kind,
       banner: gift.banner_url, active: gift.active, status: giftState(gift), uses: gift.uses,
-      maxUses: gift.max_uses, memberLimit: gift.member_limit, expiresAt: gift.expires_at, createdAt: gift.created_at,
+      maxUses: gift.max_uses, memberLimit: gift.member_limit, expiresAt: gift.expires_at, createdAt: gift.created_at, successMessage:gift.success_message, theme:gift.theme,
       link: `${BASE}/g/${await open(gift.token_cipher)}` });
   }
   if (match && req.method === 'PATCH') {
     const input = await body(req); const update: Record<string, unknown> = {};
     if (typeof input.active === 'boolean') update.active = input.active;
-    if (typeof input.title === 'string') update.title = input.title.trim().slice(0, 100);
+    if (typeof input.title === 'string') {if(!input.title.trim()||input.title.length>100)return json({error:'Título inválido.'},400);update.title=input.title.trim();}
+    if(input.name!==undefined){if(typeof input.name!=='string'||!input.name.trim()||input.name.length>100)return json({error:'Nome inválido.'},400);update.internal_name=input.name.trim();}
+    if(input.memberLimit!==undefined){const n=Number(input.memberLimit);if(!Number.isInteger(n)||n<1||n>500)return json({error:'Limite de membros inválido.'},400);update.member_limit=n;}
+    if(input.expiresAt!==undefined){const d=input.expiresAt?new Date(input.expiresAt):null;if(d&&(!Number.isFinite(d.getTime())||d.getTime()<=Date.now()))return json({error:'Validade inválida.'},400);update.expires_at=d?.toISOString()||null;}
+    if(input.successMessage!==undefined)update.success_message=String(input.successMessage||'').slice(0,300);
+    if(input.theme!==undefined)update.theme=cleanTheme(input.theme);
     if (typeof input.description === 'string') update.description = input.description.slice(0, 500);
+    try{if(input.banner)validImage(input.banner);if(input.theme)cleanTheme(input.theme);}catch{return json({error:'Banner HTTPS inválido.'},400);}
     if (input.banner !== undefined) update.banner_url = validImage(input.banner);
-    if (input.maxUses !== undefined) { const v = input.maxUses === null ? null : Number(input.maxUses); if (v !== null && (!Number.isSafeInteger(v) || v < 1)) return json({ error: 'Limite inválido.' }, 400); update.max_uses = v; }
+    if (input.maxUses !== undefined) { const v = input.maxUses === null ? null : Number(input.maxUses); if (v !== null && (!Number.isSafeInteger(v) || v < 1 || v > 2147483647)) return json({ error: 'Limite inválido.' }, 400); update.max_uses = v; }
     if (!Object.keys(update).length) return json({ error: 'Nada para alterar.' }, 400);
     const { data, error } = await db.from('valtrex_gifts').update(update).eq('id', match[1]).eq('tenant_id', tenant.id).select('id').maybeSingle();
     if (error || !data) return json({ error: 'Gift não encontrado.' }, 404);
@@ -791,7 +816,12 @@ function cleanProduct(input: any) {
   if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.length > 100 ||
       typeof input.description !== 'string' || input.description.length > 2000 ||
       !['manual','automatic'].includes(input.delivery)) throw new Error('Dados do produto inválidos.');
-  return { name: input.name.trim(), description: input.description.trim(), delivery: input.delivery };
+  const result:any={name:input.name.trim(),description:input.description.trim(),delivery:input.delivery};
+  if(input.banner!==undefined)result.banner=input.banner?validImage(input.banner):'';
+  if(input.footer!==undefined){if(typeof input.footer!=='string'||input.footer.length>500)throw new Error();result.footer=input.footer.trim();}
+  if(input.appearance!==undefined){const a=input.appearance;if(!a||typeof a!=='object'||!['editorial','consolidated'].includes(a.mode)||!['secondary','primary','success'].includes(a.buttonStyle)||typeof a.buttonLabel!=='string'||a.buttonLabel.length>80||a.accent&&!/^#[0-9a-fA-F]{6}$/.test(a.accent))throw new Error();result.appearance={mode:a.mode,buttonStyle:a.buttonStyle,buttonLabel:a.buttonLabel.trim(),accent:a.accent||'',showStock:a.showStock===true,showPrice:a.showPrice!==false};}
+  if(input.initialOption!==undefined&&input.initialOption!==null){const o=input.initialOption;if(typeof o.name!=='string'||!o.name.trim()||o.name.length>60||!Number.isFinite(o.price)||o.price<0.01||o.price>1000000||Math.abs(o.price*100-Math.round(o.price*100))>1e-6)throw new Error();result.initialOption={name:o.name.trim(),price:Math.round(o.price*100)/100};}
+  return result;
 }
 function publicLink(value: any) {
   if (!value) return null;
@@ -815,6 +845,8 @@ async function productPortal(req: Request, path: string, tenant: any) {
     const input = await body(req);
     let payload; try { payload = cleanProduct(input); } catch { return json({error:'Informe nome, descrição e tipo de entrega válidos.'},400); }
     const creating = !input.productId;
+    if(!creating&&payload.initialOption)return json({error:'A opção inicial só pode ser criada junto com um produto novo.'},400);
+    if((payload.appearance||payload.initialOption)&&catalog?.bridge_version!==2)return json({error:'Atualize a integração do bot para R70 antes de personalizar ou criar opções pelo site.'},409);
     const productId = creating ? `cloud_${crypto.randomUUID().replaceAll('-','')}` : String(input.productId);
     const existing = (catalog?.products || []).find((p:any)=>p.id === productId);
     if (!creating && (!existing || existing.revision !== input.baseRevision)) return json({error:'O produto mudou. Atualize o catálogo antes de editar.'},409);
@@ -847,7 +879,7 @@ async function productBridge(req:Request, path:string, tenant:any) {
       return {id:p.id,...cleanProduct(p),revision:p.revision,options:Number.isInteger(p.options)?Math.min(10000,Math.max(0,p.options)):0};
     }); } catch {return json({error:'Produto inválido.'},400);}
     if(new Set(products.map((p:any)=>p.id)).size!==products.length)return json({error:'Produtos duplicados.'},400);
-    const {error}=await db.from('valtrex_product_catalogs').upsert({tenant_id:tenant.id,products,seen_at:new Date().toISOString(),bridge_version:1});
+    const {error}=await db.from('valtrex_product_catalogs').upsert({tenant_id:tenant.id,products,seen_at:new Date().toISOString(),bridge_version:input.bridgeVersion===2?2:1});
     return error?json({error:'Não foi possível sincronizar.'},503):json({ok:true});
   }
   if(path==='products/result' && req.method==='POST') {

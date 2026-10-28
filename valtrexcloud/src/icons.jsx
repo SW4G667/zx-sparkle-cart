@@ -1,6 +1,9 @@
 import React from 'react';
 
 const paths = {
+  ai: <><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M12 2v4M8 12h.01M16 12h.01M9 16h6M1 11v5m22-5v5"/></>,
+  tickets: <><path d="M3 4h18v5a3 3 0 0 0 0 6v5H3v-5a3 3 0 0 0 0-6V4Z"/><path d="M8 8h8M8 12h5M8 16h8"/></>,
+  'ticket-settings': <><path d="M3 6h18M3 18h18M3 12h18"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></>,
   revenue: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 15h4M16 13v4m-2-2h4"/></>,
   finance: <><path d="M3 21h18M6 17v-5m6 5V8m6 9V3"/></>,
   chart: <><path d="M3 3v18h18M6 15l5-5 4 3 6-7"/></>,

@@ -1,3 +1,4 @@
+import {AISettings,TicketInbox,TicketSettings} from './service-workspace.jsx';
 import GiftStudio from './gift-studio.jsx';
 import React, { useEffect, useState, useRef } from 'react';
 import Icon from './icons.jsx';
@@ -10,7 +11,7 @@ import { ProductsPanel, NotificationCenter, VerificationAppearance } from './sto
 import { FinancePanel, SupportChat } from './finance-chat.jsx';
 
 const apiRoot = '/api/portal';
-const nav = [['overview','Visão geral'],['apps','Aplicações'],['products','Produtos'],['finance','Rendimentos'],['chat','Atendimento'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['help','Ajuda']];
+const nav = [['overview','Visão geral'],['apps','Aplicações'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['help','Ajuda']];
 function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true"><Icon name="cloud" size={24}/></span><span>{BRAND}<span className="portal-brand-light">SEU WORKSPACE</span></span></a>; }
 
 async function request(path, { method = 'GET', data, csrf } = {}) {
@@ -18,7 +19,7 @@ async function request(path, { method = 'GET', data, csrf } = {}) {
     method, credentials: 'same-origin',
     headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-valtrex-csrf': csrf || '' },
     body: method === 'GET' ? undefined : JSON.stringify(data || {}),
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(path.endsWith('/draft') ? 30000 : 12000),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a ação.');
@@ -248,6 +249,9 @@ export default function Dashboard() {
           <button className="portal-primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar autenticação'}</button></form> : <Empty title="Carregando autenticação" text="Aguarde a consulta ao backend."/>}</Section>}
       {tab === 'gifts' && <Section eyebrow="GIFTS" title="Seu estúdio de links" description="Crie lotes, personalize o convite e acompanhe cada Gift.">{app?<GiftStudio key={appId} gifts={gifts} call={call} setGifts={setGifts}/>:<Empty title="Escolha uma aplicação" text="Vincule um bot para gerenciar seus Gifts."/>}</Section>}
       {tab === 'finance' && <Section eyebrow="SUA OPERAÇÃO" title="Rendimentos com todos os detalhes" description="Vendas confirmadas, evolução e histórico financeiro da aplicação.">{app?<FinancePanel key={appId} appId={appId} request={request}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para consultar os rendimentos."/>}</Section>}
+      {tab === 'ai' && <Section eyebrow="INTELIGÊNCIA ARTIFICIAL" title="Conhecimento que atende" description="Conecte sua API, personalize a voz da loja e prepare respostas com a equipe.">{app?<AISettings key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para configurar a IA."/>}</Section>}
+      {tab === 'tickets' && <Section eyebrow="TICKETS DE CLIENTES" title="Sua operação de atendimento" description="Acompanhe o Discord e responda pelo site com a identidade da sua loja.">{app?<TicketInbox key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot para consultar os tickets da loja."/>}</Section>}
+      {tab === 'ticket-settings' && <Section eyebrow="PREFERÊNCIAS DE ATENDIMENTO" title="Do seu jeito, em cada resposta" description="Escolha bot ou webhook, personalize a apresentação e organize respostas rápidas.">{app?<TicketSettings key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot para configurar o atendimento."/>}</Section>}
       {tab === 'chat' && <Section eyebrow="ATENDIMENTO" title="Sua equipe, por perto" description="Acompanhe a conversa de suporte desta aplicação.">{app?<SupportChat key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para iniciar uma conversa."/>}</Section>}
       {tab === 'products' && <Section eyebrow="SUA LOJA" title="Do workspace para o seu bot" description="Crie produtos, edite as informações e acompanhe a sincronização.">{app?<ProductsPanel key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot com Cloud vinculado para gerenciar produtos."/>}</Section>}
       {tab === 'appearance' && <Section eyebrow="APARÊNCIA" title="Sua página, sua identidade" description="As cores e textos são isolados por aplicação. A prévia não consome Gift.">

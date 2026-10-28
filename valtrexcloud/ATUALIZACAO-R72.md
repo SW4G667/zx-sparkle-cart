@@ -29,6 +29,7 @@ As reservas de memória consideram a identidade física do servidor, inclusive q
 | XSystem, slot 1 | API autenticada, servidor ligado; sem supervisor reconhecido para compartilhar esse processo |
 | Discloud, slots 1 e 2 | Contas autenticadas; cada uma informou 100 MB, insuficientes para a reserva atual de 350 MB por bot |
 | PhanomCloud, slot 1 | API retornou HTTP 401 para a chave e o modo de autenticação fornecidos |
+| ShardCloud, slot 1 | API REST autenticada; dez aplicações retornadas na consulta de leitura |
 | Altare | SFTP preenchido; memória contratada não informada e login SFTP não confirmado nesta rede |
 
 A conta Enzonic também listou dois servidores adicionais: um JavaScript com 512 MB, abaixo da reserva atual com supervisor, e outro cujo runtime não foi confirmado. Isso não significa que ambos possam receber qualquer bot.

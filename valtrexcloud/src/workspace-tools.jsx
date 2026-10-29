@@ -16,7 +16,7 @@ export function AppToolbar({ query, setQuery, status, setStatus, preferences, up
 
 export function PreferencesPanel({ value, update }) {
   return <div className="cloud-preferences"><section><span className="portal-overline">APARÊNCIA DO WORKSPACE</span><h3>Menos ruído.<br/>Mais você.</h3><p>Personalize este navegador. A página pública de cada aplicação tem sua própria configuração.</p>
-    <div className="theme-choices">{[['dark','Escuro','moon'],['light','Claro','sun'],['system','Sistema','monitor']].map(([key,label,icon]) => <button key={key} aria-pressed={value.theme === key} onClick={() => update({ theme:key })}><div className={`theme-sample sample-${key}`}><i/><div><i/><i/></div></div><span><Icon name={icon} size={16}/>{label}{value.theme === key && <Icon name="check" size={15}/>}</span></button>)}</div>
+    <div className="theme-choices">{[['dark','Escuro','moon'],['light','Claro','sun'],['system','Sistema','monitor'],['red','Vermelho','paint'],['blue','Azul','paint'],['purple','Violeta','paint'],['green','Esmeralda','paint'],['contrast','Alto contraste','monitor']].map(([key,label,icon]) => <button key={key} aria-pressed={value.theme === key} onClick={() => update({ theme:key })}><div className={`theme-sample sample-${key}`}><i/><div><i/><i/></div></div><span><Icon name={icon} size={16}/>{label}{value.theme === key && <Icon name="check" size={15}/>}</span></button>)}</div>
     <div className="preference-hint"><Icon name="info"/>Preferências salvas apenas neste navegador. Nenhuma credencial é armazenada aqui.</div></section>
     <section><h4>Conforto e privacidade</h4>{[
       ['Interface compacta','Reduzir o espaço entre cards e campos.',value.density === 'compact',checked=>update({density:checked?'compact':'comfortable'})],

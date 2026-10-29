@@ -1,13 +1,17 @@
 export const PUBLIC_PRESETS = {
   dark: { primary: '#f5f5f5', secondary: '#d4d4d8', background: '#09090b', card: '#121214', border: '#303034', text: '#fafafa' },
   light: { primary: '#171717', secondary: '#404040', background: '#f5f5f5', card: '#ffffff', border: '#d4d4d8', text: '#171717' },
+  red: { primary: '#ff6d87', secondary: '#ffc2cc', background: '#10090d', card: '#1b1016', border: '#492430', text: '#fff1f4' },
+  blue: { primary: '#9cbcff', secondary: '#cee0ff', background: '#080d17', card: '#101b2e', border: '#293c5e', text: '#f1f5ff' },
+  purple: { primary: '#c6a7ff', secondary: '#e7d7ff', background: '#100b19', card: '#1c132b', border: '#423054', text: '#fbf5ff' },
+  green: { primary: '#62dfb4', secondary: '#b9f4df', background: '#08130f', card: '#10251c', border: '#285242', text: '#effff8' },
   contrast: { primary: '#ffffff', secondary: '#ffffff', background: '#000000', card: '#000000', border: '#ffffff', text: '#ffffff' },
 };
 export const DEFAULT_PREFERENCES = { theme: 'dark', density: 'comfortable', layout: 'grid', sort: 'name', reducedMotion: false, expiryNotice: true, hideIds: false, timezone: 'local', favorites: [] };
 export function normalizePreferences(input = {}) {
   if (!input || typeof input !== 'object') input = {};
   return {
-    theme: ['dark', 'light', 'system'].includes(input.theme) ? input.theme : 'dark',
+    theme: ['dark', 'light', 'system', 'red', 'blue', 'purple', 'green', 'contrast'].includes(input.theme) ? input.theme : 'dark',
     density: input.density === 'compact' ? 'compact' : 'comfortable',
     layout: input.layout === 'list' ? 'list' : 'grid',
     sort: ['name', 'expiry', 'status'].includes(input.sort) ? input.sort : 'name',

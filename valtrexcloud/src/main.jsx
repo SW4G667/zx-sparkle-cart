@@ -7,6 +7,7 @@ import { BRAND, displayName } from './branding.mjs';
 import './cloud.css';
 import Icon from './icons.jsx';
 import { LoginVisual } from './workspace-tools.jsx';
+import { isDashboardPath } from './routing.mjs';
 
 const DEFAULT_THEME = {
   name: BRAND, title: 'Verifique sua conta', description: 'Conecte sua conta Discord para concluir a verificação.',
@@ -238,6 +239,6 @@ const giftSetup = path.match(/^\/g\/([A-Za-z0-9_-]+)\/setup$/);
 const verify = path.match(/^\/v\/(\d{15,22})$/);
 const preview = path.match(/^\/preview\/(\d{15,22})\/(\d{13})\/([0-9a-f]{64})$/);
 const status = new URLSearchParams(window.location.search).get('status');
-createRoot(document.getElementById('root')).render(path === '/dashboard' ? <Dashboard/> : path === '/plans' || path === '/plans/' ? <Plans/> : giftSetup ? <SetupPage token={giftSetup[1]}/> : gift ? <AccessPage token={gift[1]}/> : verify ? <AccessPage token={verify[1]} kind="verify"/> : preview ? <PreviewPage parts={preview.slice(1)}/> : path === '/result' ? <StatusPage status={status}/> : path === '/' ? <Home/> : <StatusPage status="invalid"/>);
+createRoot(document.getElementById('root')).render(isDashboardPath(path) ? <Dashboard/> : path === '/plans' || path === '/plans/' ? <Plans/> : giftSetup ? <SetupPage token={giftSetup[1]}/> : gift ? <AccessPage token={gift[1]}/> : verify ? <AccessPage token={verify[1]} kind="verify"/> : preview ? <PreviewPage parts={preview.slice(1)}/> : path === '/result' ? <StatusPage status={status}/> : path === '/' ? <Home/> : <StatusPage status="invalid"/>);
 
 document.title = `${BRAND} · Aplicações e comunidade`;

@@ -1,3 +1,4 @@
+import RobuxWorkspace from './robux-workspace.jsx';
 import ProductCreator,{newProduct} from './product-creator.jsx';
 import React,{useState,useEffect,useRef} from 'react';
 import Icon from './icons.jsx';
@@ -22,6 +23,8 @@ export function ProductsPanel({appId,request,csrf}) {
   const rows=products.filter(p=>`${p.name} ${p.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
   const online=data?.seenAt&&Date.now()-Date.parse(data.seenAt)<150000;
   const labels={pending:'Aguardando o bot',applied:'Confirmado pelo bot',conflict:'Atualize e tente novamente',failed:'Não aplicado',cancelled:'Cancelado'};
+  const robuxStore=products.find(product=>product.kind==='robux');
+  if(robuxStore)return <RobuxWorkspace key={appId} product={robuxStore} data={data} appId={appId} request={request} csrf={csrf} reload={load}/>;
   return <div className="store-workspace">
     <div className="store-status"><Icon name={online?'check':'clock'}/><div><strong>{online?'Catálogo conectado ao bot':data?.bridgeVersion?'Aguardando a próxima conexão':'Conecte a nova integração do bot'}</strong><p>{data?.seenAt?`Última sincronização: ${new Date(data.seenAt).toLocaleString('pt-BR')}.`:'Instale a atualização R67 do bot para receber seu catálogo. Você pode deixar novos produtos na fila.'} Alterações só aparecem como concluídas após confirmação.</p></div><button type="button" className="portal-outline" disabled={busy} onClick={load}><Icon name="refresh"/>Atualizar catálogo</button></div>
     {error&&<div className="portal-alert error" role="alert">{error}</div>}{message&&<div className="portal-alert" role="status">{message}</div>}

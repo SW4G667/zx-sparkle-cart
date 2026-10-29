@@ -819,7 +819,17 @@ async function bot(req: Request, path: string) {
 }
 
 // Workspace bridge: snapshots contain public catalog metadata only; never stock contents.
+function cleanRobux(input:any={}){
+ const out:any={};for(const k of ['enabled','gamepassEnabled','stockEnabled','showCalculator']){if(typeof input[k]!=='boolean')throw Error('Configuração incompleta.');out[k]=input[k];}
+ for(const k of ['rateRobux','rateGamepass']){const n=Number(input[k]);if(!Number.isFinite(n)||n<0||n>1000000)throw Error('Tarifa inválida.');out[k]=Math.round(n*100)/100;}
+ for(const k of ['minRobux','maxRobux','minGamepass','maxGamepass','stockTotal']){const n=Number(input[k]);if(!Number.isSafeInteger(n)||n<(k==='stockTotal'?0:1)||n>(k==='stockTotal'?1000000000:1000000))throw Error('Limite inválido.');out[k]=n;}
+ if(out.minRobux>out.maxRobux||out.minGamepass>out.maxGamepass)throw Error('O mínimo não pode ser maior que o máximo.');
+ for(const [k,allowed]of Object.entries({calculatorMode:['image','embed'],receiptMode:['image','embed','both'],theme:['mono','blue','red','purple','green'],buyLayout:['buttons','select','both']})){if(!allowed.includes(input[k]))throw Error('Opção visual inválida.');out[k]=input[k];}
+ for(const [k,max]of [['calculatorTitle',60],['receiptTitle',65],['storeName',40],['footer',120]]){if(typeof input[k]!=='string'||input[k].length>max)throw Error('Texto inválido.');out[k]=input[k].trim();}
+ return out;
+}
 function cleanProduct(input: any) {
+  if(input?.kind==='robux')return {kind:'robux',name:'Loja de Robux',description:'Tarifas, estoque e aparência do Buxx',delivery:'manual',settings:cleanRobux(input.settings)};
   if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.length > 100 ||
       typeof input.description !== 'string' || input.description.length > 2000 ||
       !['manual','automatic'].includes(input.delivery)) throw new Error('Dados do produto inválidos.');
@@ -851,7 +861,10 @@ async function productPortal(req: Request, path: string, tenant: any) {
     if (!(await limit(req,'product_write',40))) return json({error:'Aguarde antes de salvar outro produto.'},429);
     const input = await body(req);
     let payload; try { payload = cleanProduct(input); } catch { return json({error:'Informe nome, descrição e tipo de entrega válidos.'},400); }
+    const robuxStore=(catalog?.products||[]).some((p:any)=>p.kind==='robux');
+    if((input.kind==='robux')!==robuxStore)return json({error:'Use o editor correspondente ao tipo deste bot.'},409);
     const creating = !input.productId;
+    if(robuxStore&&(creating||input.productId!=='robux_store'))return json({error:'Atualize a configuração da loja de Robux existente.'},400);
     if(!creating&&payload.initialOption)return json({error:'A opção inicial só pode ser criada junto com um produto novo.'},400);
     if((payload.appearance||payload.initialOption)&&catalog?.bridge_version!==2)return json({error:'Atualize a integração do bot para R70 antes de personalizar ou criar opções pelo site.'},409);
     const productId = creating ? `cloud_${crypto.randomUUID().replaceAll('-','')}` : String(input.productId);

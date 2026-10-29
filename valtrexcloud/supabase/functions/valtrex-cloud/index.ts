@@ -135,7 +135,7 @@ async function giftByToken(token: string) {
   return data;
 }
 async function bootstrap(req: Request) {
-  if (!(await limit(req, 'bootstrap', 6))) return json({ error: 'Aguarde antes de tentar novamente.' }, 429);
+  if (!(await limit(req, 'bootstrap_ip', 60))) return json({ error: 'Aguarde antes de tentar novamente.' }, 429);
   // O token pertence a uma aplicação bot, nunca a uma conta pessoal. Ele só é
   // usado nesta chamada para consultar a identidade oficial; não é armazenado.
   const token = (req.headers.get('authorization') || '').match(/^Bot ([A-Za-z0-9._-]{40,200})$/)?.[1];
@@ -149,9 +149,17 @@ async function bootstrap(req: Request) {
   if (!identity.ok) return json({ error: 'Discord recusou a credencial do bot.' }, 401);
   const user = await identity.json();
   if (!validId(user.id) || user.bot !== true) return json({ error: 'A credencial não pertence a uma aplicação bot.' }, 401);
-  const bridgeKey = randomToken() + randomToken();
+  // Retries and two legitimate workers with the same bot token receive the
+  // same capability; concurrent bootstrap requests cannot invalidate each other.
+  const master = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!master) return json({error:'Registro temporariamente indisponível.'},503);
+  const signingKey = await crypto.subtle.importKey('raw',encoder.encode(master),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const signature = await crypto.subtle.sign('HMAC',signingKey,encoder.encode(`cloud-bridge-v2\0${user.id}\0${token}`));
+  if (!(await limit(req, `bootstrap_app:${user.id}`, 6))) return json({error:'Aguarde antes de registrar esta aplicação novamente.'},429);
+  const bridgeKey = [...new Uint8Array(signature)].map(b=>b.toString(16).padStart(2,'0')).join('');
   const botKeyHash = await sha(bridgeKey);
-  const { data: previous } = await db.from('valtrex_tenants').select('id').eq('id', user.id).maybeSingle();
+  const { data: previous } = await db.from('valtrex_tenants').select('id,bot_key_hash').eq('id', user.id).maybeSingle();
+  if(previous?.bot_key_hash===botKeyHash)return json({applicationId:user.id,bridgeKey,apiUrl:`${BASE}/api`,redirectUri:CALLBACK});
   const operation = previous
     ? db.from('valtrex_tenants').update({ bot_key_hash: botKeyHash, updated_at: new Date().toISOString() }).eq('id', user.id)
     : db.from('valtrex_tenants').insert({ id: user.id, label: String(user.username || 'Valtrex').slice(0, 80), bot_key_hash: botKeyHash });

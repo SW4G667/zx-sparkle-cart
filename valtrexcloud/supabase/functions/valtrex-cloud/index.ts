@@ -591,8 +591,8 @@ async function portal(req: Request, path: string) {
         .eq('owner_user_id', session.discord_user_id).order('synced_at', { ascending: false }),
     ]);
     if (error || managedError) return json({ error: 'Não foi possível carregar suas aplicações.' }, 503);
-    const {data:platform}=await db.from('valtrex_manager_web').select('administrator_ids').eq('id',1).maybeSingle();
-    return json({ isPlatformAdmin:Array.isArray(platform?.administrator_ids)&&platform.administrator_ids.includes(session.discord_user_id), user: { id: session.discord_user_id, name: session.username,
+    const role=await siteRole(session.discord_user_id);
+    return json({ isPlatformAdmin:role.admin, user: { id: session.discord_user_id, name: session.username,
       avatar: session.avatar_hash ? `https://cdn.discordapp.com/avatars/${session.discord_user_id}/${session.avatar_hash}.png?size=128` : '' },
       apps: apps || [], managedApps: managedApps || [], csrf: await open(session.csrf_cipher), loginTenantId: session.login_tenant_id });
   }
@@ -961,6 +961,7 @@ async function portalNotices(req:Request,path:string,userId:string) {
 async function managerSite(req:Request,path:string) {
   if(!(await limit(req,'manager_site',30)))return json({error:'Aguarde antes de continuar.'},429);
   const denied=await managerIdentity(req); if(denied)return denied;
+  if(path.startsWith('access/'))return managerSiteAccess(req,path.slice(7));
   if(path.startsWith('control/'))return managerControls(req,path.slice(8));
   if(path.startsWith('ai/'))return managerCloudAI(req,path.slice(3));
   return managerSiteData(req,path);
@@ -1101,20 +1102,48 @@ async function managerSupport(req:Request,path:string) {
 }
 
 
+async function siteRole(userId:string){
+ const [{data:control,error:ce},{data:access,error:ae}]=await Promise.all([db.from('valtrex_manager_web').select('*').eq('id',1).maybeSingle(),db.from('valtrex_site_user_access').select('*').eq('user_id',userId).maybeSingle()]);
+ if(ce||ae)throw Error('Site authorization unavailable');
+ const owner=Array.isArray(control?.site_owner_ids)&&control.site_owner_ids.includes(userId);
+ return {owner,admin:owner||access?.admin_enabled===true,access,control};
+}
+async function managerSiteAccess(req:Request,path:string){
+ if(path==='owners'&&req.method==='POST'){
+  const input=await body(req);if(!Array.isArray(input.owners)||input.owners.length>30||input.owners.some((id:any)=>!validId(id)))return json({error:'IDs dos proprietários inválidos.'},400);
+  const {error}=await db.from('valtrex_manager_web').upsert({id:1,site_owner_ids:[...new Set(input.owners)]});return error?json({error:'Proprietários não sincronizados.'},503):json({ok:true});
+ }
+ if(path==='users'&&req.method==='GET'){
+  const userId=new URL(req.url).searchParams.get('userId');if(userId){if(!validId(userId))return json({error:'Usuário inválido.'},400);const role=await siteRole(userId);return json({userId,owner:role.owner,admin:role.admin,access:role.access||{user_id:userId,admin_enabled:false,ai_managed:false,ai_enabled:false,ai_tickets:false,ai_community:false}});}
+  const {data,error}=await db.from('valtrex_site_user_access').select('user_id,admin_enabled,ai_managed,ai_enabled,ai_tickets,ai_community,updated_at').order('updated_at',{ascending:false}).limit(100);return error?json({error:'Permissões indisponíveis.'},503):json({users:data||[]});
+ }
+ if(path==='users'&&req.method==='POST'){
+  const input=await body(req);if(!validId(input.userId)||!validId(input.actorId)||!['ai','administration'].includes(input.scope)||typeof input.enabled!=='boolean'||input.scope==='ai'&&['tickets','community'].some(k=>typeof input[k]!=='boolean'))return json({error:'Permissão inválida.'},400);
+  const actor=await siteRole(input.actorId);if(!actor.owner)return json({error:'Somente os IDs de proprietário do .env podem alterar permissões do site.'},403);
+  if(input.scope==='administration'&&actor.control.site_owner_ids.includes(input.userId))return json({error:'O acesso de proprietário é configurado no .env do Manager.'},409);
+  const value=input.scope==='ai'?{ai_managed:true,ai_enabled:input.enabled,ai_tickets:input.enabled&&input.tickets,ai_community:input.enabled&&input.community}:{admin_enabled:input.enabled};
+  // Only the chosen scope is updated, including concurrent changes to the other scope.
+  const row={user_id:input.userId,...value,granted_by:input.actorId,updated_at:new Date().toISOString()};
+  const {error}=await db.from('valtrex_site_user_access').upsert(row,{onConflict:'user_id'});if(error)return json({error:'A alteração não foi confirmada.'},503);
+  const role=await siteRole(input.userId);return json({ok:true,userId:input.userId,owner:role.owner,admin:role.admin,access:role.access});
+ }
+ return json({error:'Método inválido.'},405);
+}
+
 async function platformPortal(req:Request,path:string,session:any){
  if(path.startsWith('ai/'))return json({error:'A liberação de IA é feita somente pelo Manager.'},403);
- const {data:control}=await db.from('valtrex_manager_web').select('*').eq('id',1).maybeSingle();
- if(!Array.isArray(control?.administrator_ids)||!control.administrator_ids.includes(session.discord_user_id))return json({error:'Acesso restrito à administração do projeto.'},403);
+ const {admin,control}=await siteRole(session.discord_user_id);
+ if(!admin)return json({error:'Acesso restrito à administração do projeto.'},403);
  if(path==='status'&&req.method==='GET'){
   const {data:jobs,error}=await db.from('valtrex_manager_commands').select('id,kind,state,created_at,finished_at,result').order('created_at',{ascending:false}).limit(30);
-  return error?json({error:'Operações indisponíveis.'},503):json({status:control.status,seenAt:control.seen_at,jobs:jobs||[]});
+  return error?json({error:'Operações indisponíveis.'},503):json({status:control?.status||{},seenAt:control?.seen_at||null,jobs:jobs||[]});
  }
  if(path==='commands'&&req.method==='POST'){
   const input=await body(req);if(!uuidPattern.test(input.clientId||'')||!['update_bot','host_test','site_url','gateway_save'].includes(input.kind)||!input.payload||typeof input.payload!=='object')return json({error:'Operação inválida.'},400);
   if(!(await limit(req,`platform_command:${session.discord_user_id}`,15)))return json({error:'Aguarde antes de enviar outra operação.'},429);
   const payload=input.payload;
   if(input.kind==='update_bot'&&!/^[\w-]{1,120}$/.test(payload.appId||''))return json({error:'Aplicação inválida.'},400);
-  if(input.kind==='host_test'&&(!['enzonic','xsystem','altare','heaven','monkey','doki','discloud','phanom','shardcloud'].includes(payload.provider)||!Number.isInteger(payload.slot)||payload.slot<1||payload.slot>16))return json({error:'Servidor inválido.'},400);
+  if(input.kind==='host_test'&&(!['enzonic','xsystem','altare','heaven','monkey','doki','wispbyte','discloud','phanom','vertra','bothosting','shardcloud'].includes(payload.provider)||!Number.isInteger(payload.slot)||payload.slot<1||payload.slot>16))return json({error:'Servidor inválido.'},400);
   if(input.kind==='site_url'){try{const u=new URL(payload.url);if(u.protocol!=='https:'||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw new Error();}catch{return json({error:'Use somente o domínio HTTPS do site.'},400);}}
   if(input.kind==='gateway_save'&&(payload.gateway!=='goatpay'||typeof payload.enabled!=='boolean'||payload.apiKey!==undefined&&(typeof payload.apiKey!=='string'||payload.apiKey.length>400||/[\s\x00-\x1f]/.test(payload.apiKey))))return json({error:'Configuração de gateway inválida.'},400);
   const {data:prior}=await db.from('valtrex_manager_commands').select('*').eq('id',input.clientId).maybeSingle();
@@ -1132,9 +1161,10 @@ async function platformPortal(req:Request,path:string,session:any){
 async function managerControls(req:Request,path:string){
  if(path==='poll'&&req.method==='POST'){
   const input=await body(req,180000);if(!Array.isArray(input.administrators)||input.administrators.length>100||input.administrators.some((id:any)=>!validId(id))||!input.status||typeof input.status!=='object')return json({error:'Estado de administração inválido.'},400);
+  if(input.siteOwners!==undefined&&(!Array.isArray(input.siteOwners)||input.siteOwners.length>30||input.siteOwners.some((id:any)=>!validId(id))))return json({error:'IDs dos proprietários inválidos.'},400);
   // Only fixed public fields are stored; credentials and arbitrary environment variables are discarded.
   const status={siteUrl:typeof input.status.siteUrl==='string'?input.status.siteUrl.slice(0,250):'',hosts:(input.status.hosts||[]).slice(0,150).map((h:any)=>({provider:String(h.provider).slice(0,20),slot:Number(h.slot),runtime:String(h.runtime).slice(0,30),serverId:String(h.serverId||'').slice(0,64)})),apps:(input.status.apps||[]).slice(0,500).map((a:any)=>({id:String(a.id).slice(0,120),label:String(a.label).slice(0,80)})),goatpay:{enabled:input.status.goatpay?.enabled===true,configured:input.status.goatpay?.configured===true}};
-  const {error}=await db.from('valtrex_manager_web').upsert({id:1,administrator_ids:[...new Set(input.administrators)],status,seen_at:new Date().toISOString()});if(error)return json({error:'Estado não salvo.'},503);
+  const {error}=await db.from('valtrex_manager_web').upsert({id:1,administrator_ids:[...new Set(input.administrators)],...(input.siteOwners!==undefined?{site_owner_ids:[...new Set(input.siteOwners)]}:{}),status,seen_at:new Date().toISOString()});if(error)return json({error:'Estado não salvo.'},503);
   const {data,error:claimError}=await db.rpc('valtrex_claim_manager_commands');if(claimError)return json({error:'Fila indisponível.'},503);
   const commands=[];for(const row of data||[]){const decoded=JSON.parse(await open(row.payload_cipher));commands.push({id:row.id,actorId:row.actor_id,kind:row.kind,payload:decoded.payload,lease:row.lease});}return json({commands});
  }
@@ -1160,11 +1190,12 @@ function cleanCloudAI(input:any){
  return {...out,format:input.format,name:input.name.trim(),footer:input.footer.trim(),accent:input.accent||'',communityChannels:[...new Set(input.communityChannels)]};
 }
 async function readCloudAccess(tenant:any){
- const [{data:grant,error:ge},{data:apps,error:ae}]=await Promise.all([db.from('valtrex_ai_access').select('enabled,tickets,community,owner_user_id,updated_at').eq('tenant_id',tenant.id).maybeSingle(),db.from('valtrex_managed_apps').select('status,expires_at').eq('bot_id',tenant.id).eq('owner_user_id',tenant.owner_user_id)]);
- if(ge||ae)throw Error('AI authorization unavailable');
+ const [{data:grant,error:ge},{data:apps,error:ae},{data:user,error:ue}]=await Promise.all([db.from('valtrex_ai_access').select('enabled,tickets,community,owner_user_id,updated_at').eq('tenant_id',tenant.id).maybeSingle(),db.from('valtrex_managed_apps').select('status,expires_at').eq('bot_id',tenant.id).eq('owner_user_id',tenant.owner_user_id),db.from('valtrex_site_user_access').select('ai_managed,ai_enabled,ai_tickets,ai_community,updated_at').eq('user_id',tenant.owner_user_id).maybeSingle()]);
+ if(ge||ae||ue)throw Error('AI authorization unavailable');
  const active=(apps||[]).some((a:any)=>a.status==='active'&&a.expires_at&&Date.parse(a.expires_at)>Date.now());
- const allowed=active&&grant?.enabled===true&&grant.owner_user_id===tenant.owner_user_id;
- return {allowed,tickets:allowed&&grant.tickets===true,community:allowed&&grant.community===true,activeSubscription:active,updatedAt:grant?.updated_at||null};
+ // An explicit user revocation overrides every earlier application grant.
+ const managed=user?.ai_managed===true,allowed=managed?user.ai_enabled===true:grant?.enabled===true&&grant.owner_user_id===tenant.owner_user_id;
+ return {allowed,tickets:allowed&&(managed?user.ai_tickets:grant?.tickets)===true,community:allowed&&(managed?user.ai_community:grant?.community)===true,activeSubscription:active,scope:managed?'user':'application',updatedAt:(managed?user.updated_at:grant?.updated_at)||null};
 }
 async function cloudService(){
  const {data,error}=await db.from('valtrex_ai_service').select('*').eq('id',1).maybeSingle();if(error)throw Error('AI service unavailable');if(data)return data;
@@ -1191,12 +1222,11 @@ async function managerCloudAI(req:Request,path:string){
  }
  if(path==='service'&&req.method==='GET'){const service=await cloudService();let health:any=null;try{const r=await fetch(cloudAIEndpoint.replace('/api/cloud-ai/generate','/health'),{signal:AbortSignal.timeout(8000),redirect:'error'});if(r.ok)health=await r.json();}catch{}return json({enabled:service.enabled,ready:health?.service==='cloud-support-ai'&&health?.state==='ready',state:health?.state||'unavailable',model:health?.model||null});}
  if(path==='service'&&req.method==='POST'){const input=await body(req);if(typeof input.enabled!=='boolean')return json({error:'Estado inválido.'},400);await cloudService();const {error}=await db.from('valtrex_ai_service').update({enabled:input.enabled,updated_at:new Date().toISOString()}).eq('id',1);return error?json({error:'Não foi possível confirmar a alteração.'},503):json({ok:true});}
- if(path==='access'&&req.method==='GET'){const botId=new URL(req.url).searchParams.get('botId');if(!validId(botId))return json({error:'Aplicação inválida.'},400);const {data,error}=await db.from('valtrex_ai_access').select('enabled,tickets,community,owner_user_id,updated_at').eq('tenant_id',botId).maybeSingle();return error?json({error:'Permissão indisponível.'},503):json({access:data||{enabled:false,tickets:false,community:false}});}
+ if(path==='access'&&req.method==='GET'){const botId=new URL(req.url).searchParams.get('botId');if(!validId(botId))return json({error:'Aplicação inválida.'},400);const {data:tenant,error}=await db.from('valtrex_tenants').select('id,owner_user_id').eq('id',botId).maybeSingle();if(error)return json({error:'Permissão indisponível.'},503);const access=tenant?await readCloudAccess(tenant):{allowed:false,tickets:false,community:false};return json({access:{...access,enabled:access.allowed}});}
  if(path==='access'&&req.method==='POST'){
   const input=await body(req);if(!validId(input.botId)||!validId(input.ownerId)||!validId(input.actorId)||['enabled','tickets','community'].some(k=>typeof input[k]!=='boolean'))return json({error:'Permissão inválida.'},400);
-  const {data:administration}=await db.from('valtrex_manager_web').select('administrator_ids').eq('id',1).maybeSingle();if(!administration?.administrator_ids?.includes(input.actorId))return json({error:'Administrador do Manager não autorizado.'},403);
+  const actor=await siteRole(input.actorId);if(!actor.owner)return json({error:'Administrador do Manager não autorizado.'},403);
   const {data:tenant}=await db.from('valtrex_tenants').select('id,owner_user_id').eq('id',input.botId).maybeSingle();if(!tenant||tenant.owner_user_id!==input.ownerId)return json({error:'Sincronize a integração Cloud e o proprietário desta aplicação antes de liberar a IA.'},409);
-  const access=await readCloudAccess(tenant);if(input.enabled&&!access.activeSubscription)return json({error:'A aplicação precisa de um plano ativo sincronizado pelo Manager.'},409);
   const {error}=await db.from('valtrex_ai_access').upsert({tenant_id:tenant.id,owner_user_id:input.ownerId,enabled:input.enabled,tickets:input.enabled&&input.tickets,community:input.enabled&&input.community,granted_by:input.actorId,updated_at:new Date().toISOString()});if(error)return json({error:'A permissão não foi confirmada.'},503);
   await log(tenant.id,'cloud_ai_permission',{actor:input.actorId,enabled:input.enabled,tickets:input.tickets,community:input.community});return json({ok:true,access:await readCloudAccess(tenant)});
  }

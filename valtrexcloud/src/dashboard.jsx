@@ -121,6 +121,21 @@ export default function Dashboard() {
 
   useEffect(() => { request('/me').then(data => { setSession(data); setAppId(data.apps?.[0]?.id || ''); }).catch(err => { if (!/Entre novamente/.test(err.message)) setError(err.message); }).finally(() => setLoading(false)); }, []);
   useEffect(() => {
+    if (!session) return;
+    let alive = true, busy = false;
+    async function refreshRole() {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      try { const next = await request('/me'); if (alive) setSession(current => current ? { ...current, isPlatformAdmin: next.isPlatformAdmin === true } : current); }
+      catch {} finally { busy = false; }
+    }
+    const timer = setInterval(refreshRole, 30000);
+    window.addEventListener('focus', refreshRole);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener('focus', refreshRole); };
+  }, [Boolean(session)]);
+  useEffect(() => { if (session && !session.isPlatformAdmin && tab === 'platform') setTab('overview'); }, [session?.isPlatformAdmin, tab]);
+
+  useEffect(() => {
     const controller = new AbortController();
     fetch('/api/public/catalog', { signal: controller.signal }).then(response => response.ok ? response.json() : null)
       .then(data => { if (data) setCatalog({ plans: data.plans || [], officialInvite: safeInvite(data.officialInvite) }); })

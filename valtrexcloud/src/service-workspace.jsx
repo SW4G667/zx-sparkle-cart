@@ -1,3 +1,4 @@
+import CloudAISettings from './cloud-ai-settings.jsx';
 import TicketRegistry from './ticket-registry.jsx';
 import {discordTicketRows} from './workspace-lists.mjs';
 import React,{useEffect,useRef,useState} from 'react';
@@ -22,7 +23,7 @@ export function AISettings({appId,request,csrf}){
  async function submit(e){e.preventDefault();if(await s.save({ai:a,keys,removeKeys:remove})){setKeys({});setRemove({});setReveal(false);}}
  async function test(){setTesting(true);s.setError('');s.setMessage('');try{const result=await request(`/apps/${appId}/workspace/ai/test`,{method:'POST',csrf});if(s.alive.current){setModels(result.models);s.setMessage(`Conexão confirmada com ${providers[result.provider]}. ${result.modelListed?'O modelo salvo está na lista da conta.':'O modelo salvo não apareceu na lista; confira o identificador e as permissões.'}`);}}catch(e){if(s.alive.current)s.setError(e.message);}finally{if(s.alive.current)setTesting(false);}}
  if(!a)return <><Feedback error={s.error}/><p role="status">Carregando configurações de IA…</p>{s.error&&<button className="portal-outline" onClick={s.load}>Tentar novamente</button>}</>;
- return <div className="service-settings"><Connection data={s.data}/><Feedback error={s.error} message={s.message}/><div className="service-settings-grid"><form className="portal-form" onSubmit={submit}><fieldset disabled={s.busy||testing}>
+ return <div className="service-settings"><Connection data={s.data}/><Feedback error={s.error} message={s.message}/><CloudAISettings settings={s} appId={appId} request={request} csrf={csrf}/><div className="service-settings-grid"><form className="portal-form" onSubmit={submit}><fieldset disabled={s.busy||testing}>
  <div className="service-card-heading"><span className="service-feature-icon"><Icon name="ai" size={23}/></span><div><span className="portal-overline">INTELIGÊNCIA ARTIFICIAL</span><h3>Uma voz para a sua loja</h3><p>Defina como a IA ajuda a equipe e configure sua própria conta.</p></div></div>
  <label className="store-toggle"><input type="checkbox" checked={a.enabled} onChange={e=>update({enabled:e.target.checked})}/><span>Ativar IA e sugestões de atendimento</span></label>
  <div className="portal-fields"><Field label="Provedor principal"><select value={a.provider} onChange={e=>{update({provider:e.target.value});setModels([]);}}>{Object.entries(providers).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></Field><Field label="Modelo" hint="Use o identificador disponível na sua conta."><input value={a.models[a.provider]} list="ai-models" required maxLength={120} onChange={e=>update({models:{...a.models,[a.provider]:e.target.value}})}/><datalist id="ai-models">{models.map(m=><option key={m} value={m}/>)}</datalist></Field></div>

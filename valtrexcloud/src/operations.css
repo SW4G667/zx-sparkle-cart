@@ -245,3 +245,26 @@
 .cloud-reduce-motion .support-ticket-messages {scroll-behavior:auto}
 
 .registry-row-action .cloud-icon{flex-shrink:0}
+
+/* Hosted assistant settings use the same themes and responsive form controls. */
+.cloud-ai-settings { margin-bottom:28px; }
+.cloud-ai-settings .service-card-heading { flex-wrap:wrap; }
+.cloud-ai-settings .service-card-heading>div { flex:1 1 240px; }
+.cloud-ai-settings .workspace-section-tabs { margin:22px 0; flex-wrap:wrap; }
+.cloud-ai-fields { display:grid;gap:18px; }
+.cloud-ai-settings fieldset { border:0;padding:0;margin:0;min-width:0; }
+.cloud-ai-locked {display:flex;gap:18px;align-items:flex-start;padding:22px;background:var(--portal-surface,#121214);border-radius:12px;}
+.cloud-ai-locked>svg {flex-shrink:0;}
+.cloud-ai-locked h4 {margin:0 0 8px;}
+.cloud-ai-locked p,.cloud-ai-test>small {color:var(--portal-muted,#a1a1aa);font-size:13px;line-height:1.6;}
+.cloud-ai-settings .service-form-actions {margin-top:22px;}
+.cloud-ai-settings .service-form-actions small {color:var(--portal-muted,#a1a1aa);font-size:12px;}
+.cloud-ai-preview {background:var(--portal-surface,#121214);padding:18px;border-radius:12px;overflow-wrap:anywhere;}
+.cloud-ai-preview.is-embed {border:1px solid var(--portal-border,#303034);}
+.cloud-ai-preview p {white-space:pre-wrap;line-height:1.65;}
+.cloud-ai-preview small {color:var(--portal-muted,#a1a1aa);font-size:12px;}
+.cloud-ai-test {border-top:1px solid var(--portal-border,#303034);margin-top:24px;padding-top:22px;display:grid;gap:14px;}
+.cloud-ai-test button {justify-self:start;}
+@media(max-width:480px){.cloud-ai-settings .workspace-section-tabs button {flex:1 1 auto;font-size:12px;}.cloud-ai-settings .service-form-actions {align-items:stretch;}.cloud-ai-settings .service-form-actions>button {width:100%;}}
+
+.cloud-ai-settings .service-card-heading>.workspace-badge {width:auto;height:auto;min-width:0;padding:6px 10px;border-radius:8px;white-space:nowrap;align-self:center;flex-shrink:0;}

@@ -20,7 +20,7 @@ async function request(path, { method = 'GET', data, csrf } = {}) {
     method, credentials: 'same-origin',
     headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-valtrex-csrf': csrf || '' },
     body: method === 'GET' ? undefined : JSON.stringify(data || {}),
-    signal: AbortSignal.timeout(path.endsWith('/draft') ? 30000 : 12000),
+    signal: AbortSignal.timeout(path.endsWith('/cloud-ai/test') ? 70000 : path.endsWith('/draft') ? 30000 : 12000),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a ação.');

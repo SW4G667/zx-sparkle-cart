@@ -5,6 +5,7 @@ import Dashboard from './dashboard.jsx';
 import Plans from './plans.jsx';
 import { BRAND, displayName } from './branding.mjs';
 import './cloud.css';
+import './operations.css';
 import Icon from './icons.jsx';
 import { LoginVisual } from './workspace-tools.jsx';
 import { isDashboardPath } from './routing.mjs';

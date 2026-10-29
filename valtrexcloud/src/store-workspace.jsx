@@ -1,44 +1,7 @@
-import RobuxWorkspace from './robux-workspace.jsx';
-import ProductCreator,{newProduct} from './product-creator.jsx';
 import React,{useState,useEffect,useRef} from 'react';
 import Icon from './icons.jsx';
 
-export function ProductsPanel({appId,request,csrf}) {
-  const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[query,setQuery]=useState('');
-  const [form,setForm]=useState(null),[message,setMessage]=useState('');
-  const generation=useRef(0);
-  const load=async()=>{
-    const current=++generation.current;setError('');
-    try {const result=await request(`/apps/${appId}/products`);if(current===generation.current)setData(result);}
-    catch(e){if(current===generation.current)setError(e.message);}
-  };
-  useEffect(()=>{setData(null);setForm(null);load();const timer=setInterval(load,45000);return()=>{generation.current++;clearInterval(timer);};},[appId]);
-  async function save(event){
-    event.preventDefault();if(busy)return;setBusy(true);setError('');setMessage('');
-    try{await request(`/apps/${appId}/products`,{method:'POST',csrf,data:form});setForm(null);setMessage('Alteração enviada. Aguarde a confirmação do bot.');await load();}
-    catch(e){setError(e.message);}finally{setBusy(false);}
-  }
-  const products=data?.products||[],commands=data?.commands||[];
-  const queued=commands.filter(c=>c.state==='pending');
-  const rows=products.filter(p=>`${p.name} ${p.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
-  const online=data?.seenAt&&Date.now()-Date.parse(data.seenAt)<150000;
-  const labels={pending:'Aguardando o bot',applied:'Confirmado pelo bot',conflict:'Atualize e tente novamente',failed:'Não aplicado',cancelled:'Cancelado'};
-  const robuxStore=products.find(product=>product.kind==='robux');
-  if(robuxStore)return <RobuxWorkspace key={appId} product={robuxStore} data={data} appId={appId} request={request} csrf={csrf} reload={load}/>;
-  return <div className="store-workspace">
-    <div className="store-status"><Icon name={online?'check':'clock'}/><div><strong>{online?'Catálogo conectado ao bot':data?.bridgeVersion?'Aguardando a próxima conexão':'Conecte a nova integração do bot'}</strong><p>{data?.seenAt?`Última sincronização: ${new Date(data.seenAt).toLocaleString('pt-BR')}.`:'Instale a atualização R67 do bot para receber seu catálogo. Você pode deixar novos produtos na fila.'} Alterações só aparecem como concluídas após confirmação.</p></div><button type="button" className="portal-outline" disabled={busy} onClick={load}><Icon name="refresh"/>Atualizar catálogo</button></div>
-    {error&&<div className="portal-alert error" role="alert">{error}</div>}{message&&<div className="portal-alert" role="status">{message}</div>}
-    <div className="store-toolbar"><label className="store-search"><Icon name="search"/><input aria-label="Buscar produtos" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar produto ou descrição"/></label><button type="button" className="portal-primary" disabled={busy} onClick={()=>{setMessage('');setForm(newProduct());}}><Icon name="plus"/>Novo produto</button></div>
-    <div className="store-summary"><span><strong>{products.length}</strong> produtos sincronizados</span><span><strong>{queued.length}</strong> alterações pendentes</span></div>
-    {form&&<ProductCreator value={form} onChange={setForm} busy={busy} save={save} close={()=>setForm(null)} bridgeVersion={data?.bridgeVersion}/>}
-    {!data?<p role="status">Consultando catálogo…</p>:rows.length?<div className="store-products">{rows.slice(0,100).map(product=>{
-      const pending=queued.some(c=>c.product_id===product.id);
-      return <article className="store-product" key={product.id}><div className="store-product-icon"><Icon name="products" size={22}/></div><div><h3>{product.name}</h3><p>{product.description||'Sem descrição'}</p><div className="store-product-meta"><span>{product.delivery==='automatic'?'Entrega automática':'Entrega manual'}</span><span>{product.options} opções</span>{pending&&<span>Aguardando o bot</span>}</div></div><button type="button" className="portal-outline" disabled={busy||pending} onClick={()=>{setMessage('');setForm({productId:product.id,baseRevision:product.revision,name:product.name,description:product.description,delivery:product.delivery,banner:product.banner||'',footer:product.footer||'',appearance:product.appearance||newProduct().appearance});}}>Editar<Icon name="edit" size={15}/></button><button type="button" className="cloud-icon-button" aria-label={`Duplicar ${product.name}`} disabled={busy||pending} onClick={()=>setForm({...newProduct(),name:(product.name+" • cópia").slice(0,100),description:product.description,delivery:product.delivery,banner:product.banner||"",footer:product.footer||"",appearance:product.appearance||newProduct().appearance})}><Icon name="copy"/></button></article>;
-    })}</div>:<div className="portal-empty"><Icon name="products" size={30}/><h3>{query?'Nenhum resultado':'Seu catálogo começa aqui'}</h3><p>{query?'Tente outro nome ou descrição.':'Crie um produto e acompanhe a confirmação do bot nesta página.'}</p></div>}
-    {rows.length>100&&<p className="store-help">Mostrando os primeiros 100 resultados. Use a busca para encontrar outro produto.</p>}
-    {commands.length>0&&<div className="store-history"><h3>Últimas alterações</h3>{commands.slice(0,20).map(c=><div key={c.id} className="store-history-row"><Icon name={c.state==='applied'?'check':c.state==='pending'?'clock':'info'}/><div><strong>{c.payload.name}</strong><small>{c.action==='create'?'Criação':'Edição'} · {new Date(c.created_at).toLocaleString('pt-BR')}{c.detail&&` · ${c.detail}`}</small></div><span className={`store-state state-${c.state}`}>{labels[c.state]||c.state}</span></div>)}</div>}
-  </div>;
-}
+export {default as ProductsPanel} from './catalog-workspace.jsx';
 
 export function NotificationCenter({request,csrf,planApps=[],openPlan}){
   const [notifications,setNotifications]=useState([]),[error,setError]=useState('');

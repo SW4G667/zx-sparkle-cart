@@ -1,0 +1,42 @@
+import React,{useEffect,useRef,useState} from 'react';
+import Icon from './icons.jsx';
+import TicketRegistry,{TicketBadge,formatTicketDate} from './ticket-registry.jsx';
+import {supportRows,supportTopics,mergeChatMessages} from './workspace-lists.mjs';
+
+export default function PlatformSupport({request,csrf,applications=[]}){
+ const [threads,setThreads]=useState([]),[selected,setSelected]=useState(''),[conversation,setConversation]=useState(null),[draft,setDraft]=useState(''),[loading,setLoading]=useState(true),[threadLoading,setThreadLoading]=useState(false),[older,setOlder]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const alive=useRef(true),chosen=useRef(''),generation=useRef(0),listGeneration=useRef(0),drafts=useRef(new Map()),clientId=useRef(crypto.randomUUID()),lock=useRef(false),scroller=useRef(null),conversationRef=useRef(null);
+ const call=(path,options={})=>request('/platform/support'+path,{...options,csrf});
+ async function loadList(){const g=++listGeneration.current;setLoading(true);try{const result=await call('');if(alive.current&&g===listGeneration.current)setThreads(result.threads||[]);}catch(e){if(alive.current&&g===listGeneration.current)setError(e.message);}finally{if(alive.current&&g===listGeneration.current)setLoading(false);}}
+ async function loadThread(id=chosen.current,{before='',focus=false}={}){
+  if(!id)return;const g=++generation.current;
+  if(before)setOlder(true);else if(focus)setThreadLoading(true);
+  const follow=!scroller.current||scroller.current.scrollHeight-scroller.current.scrollTop-scroller.current.clientHeight<120;
+  try{const result=await call('/'+id+(before?'?before='+encodeURIComponent(before):''));
+   if(!alive.current||g!==generation.current||id!==chosen.current)return;
+   setConversation(current=>({...result,id,messages:mergeChatMessages(current?.id===id?current.messages:[],result.messages||[]),hasOlder:before?result.hasOlder:current?.id===id&&current.messages?.length>100?current.hasOlder:result.hasOlder}));
+   setThreads(current=>current.map(t=>t.id===id?{...t,status:result.thread?.status||t.status,support_read_at:result.thread?.supportReadAt||t.support_read_at}:t));
+   if(focus)requestAnimationFrame(()=>{conversationRef.current?.focus({preventScroll:true});conversationRef.current?.scrollIntoView({behavior:'smooth',block:'start'});});
+   else if(!before&&follow)requestAnimationFrame(()=>{if(scroller.current)scroller.current.scrollTop=scroller.current.scrollHeight;});
+  }catch(e){if(alive.current&&g===generation.current)setError(e.message);}finally{if(alive.current&&g===generation.current){setThreadLoading(false);setOlder(false);}}
+ }
+ useEffect(()=>{alive.current=true;loadList();const timer=setInterval(()=>{if(document.visibilityState==='visible'){loadList();if(!lock.current)loadThread();}},15000);return()=>{alive.current=false;generation.current++;listGeneration.current++;clearInterval(timer);};},[request,csrf]);
+ function remember(){if(chosen.current)drafts.current.set(chosen.current,{text:draft,clientId:clientId.current});}
+ function choose(id){if(lock.current)return;if(id===chosen.current){conversationRef.current?.focus({preventScroll:true});conversationRef.current?.scrollIntoView({behavior:'smooth',block:'start'});return;}remember();chosen.current=id;const cached=drafts.current.get(id);clientId.current=cached?.clientId||crypto.randomUUID();setDraft(cached?.text||'');setSelected(id);setConversation(null);setError('');setNotice('');loadThread(id,{focus:true});}
+ function back(){if(lock.current)return;remember();chosen.current='';generation.current++;setSelected('');setConversation(null);setNotice('');setError('');document.querySelector('.platform-support-desk .ticket-registry')?.scrollIntoView({behavior:'smooth',block:'start'});}
+ async function send(event){event.preventDefault();if(lock.current||!chosen.current||!draft.trim())return;const id=chosen.current,text=draft.trim(),nonce=clientId.current;lock.current=true;setBusy(true);setError('');setNotice('');try{await call('/'+id+'/reply',{method:'POST',data:{message:text,clientId:nonce}});if(alive.current&&chosen.current===id){setDraft('');drafts.current.delete(id);clientId.current=crypto.randomUUID();setNotice('Resposta salva neste ticket.');await Promise.all([loadThread(id),loadList()]);}}catch(e){if(alive.current&&chosen.current===id)setError(e.message);}finally{lock.current=false;if(alive.current)setBusy(false);}}
+ async function close(){if(lock.current||!chosen.current)return;const id=chosen.current;lock.current=true;setBusy(true);setError('');try{await call('/'+id+'/close',{method:'POST',data:{}});if(alive.current&&chosen.current===id){setNotice('Atendimento encerrado. O histórico foi preservado.');await Promise.all([loadThread(id),loadList()]);}}catch(e){if(alive.current&&chosen.current===id)setError(e.message);}finally{lock.current=false;if(alive.current)setBusy(false);}}
+ const rows=supportRows(threads,applications),current=rows.find(t=>t.id===selected),thread=conversation?.thread;
+ return <div className="platform-support-desk">
+  <TicketRegistry rows={rows} selected={selected} onSelect={choose} onRefresh={()=>{setError('');loadList();if(chosen.current)loadThread();}} busy={busy} loading={loading} error={!selected?error:''} title="Atendimentos da plataforma" support limit={50}/>
+  {selected&&<section className="support-ticket-detail ticket-conversation" ref={conversationRef} tabIndex={-1} aria-label="Conversa de suporte selecionada">
+   <header className="support-detail-heading"><div><button className="portal-text-button" type="button" disabled={busy} onClick={back}><Icon name="left" size={15}/>Voltar aos tickets</button><span className="portal-overline">TICKET #{selected.slice(-8).toUpperCase()}</span><h3>{current?.title||supportTopics[thread?.topic]||'Atendimento'}</h3><p><span>Cliente: <strong>{conversation?.ownerId||current?.customer||'carregando'}</strong></span><span>Aplicação: <strong>{current?.application||conversation?.tenantId||'carregando'}</strong></span></p></div><TicketBadge status={thread?.status||current?.status||'unknown'}/></header>
+   {error&&<div className="portal-alert error" role="alert">{error}<button type="button" onClick={()=>{setError('');loadThread(selected,{focus:true});}}>Tentar novamente</button></div>}{notice&&<div className="portal-alert" role="status">{notice}</div>}
+   {threadLoading&&!conversation?<div className="workspace-table-empty" role="status"><Icon name="clock" size={28}/><p>Abrindo o histórico deste ticket…</p></div>:conversation?<>
+    <div className="support-ticket-messages" ref={scroller} role="log" aria-label="Mensagens do atendimento" aria-live="polite">{conversation.hasOlder&&<button className="portal-outline support-older" type="button" disabled={older||busy} onClick={()=>loadThread(selected,{before:String(conversation.messages[0]?.id||'')})}>{older?'Carregando…':'Carregar mensagens anteriores'}</button>}{conversation.messages.map(m=><article key={m.id} className={`support-message message-${m.author_role}`}><div className="support-message-meta"><strong>{m.author_role==='support'?'Equipe de suporte':'Cliente'}</strong><time dateTime={m.created_at}>{formatTicketDate(m.created_at)}</time></div><p>{m.message}</p></article>)}{!conversation.messages.length&&<div className="workspace-table-empty"><Icon name="chat" size={28}/><p>Este atendimento ainda não tem mensagens.</p></div>}</div>
+    <form className="support-ticket-composer" onSubmit={send}><label htmlFor="platform-ticket-reply">Resposta da equipe</label><textarea id="platform-ticket-reply" rows={4} maxLength={2000} disabled={busy} value={draft} placeholder="Escreva uma resposta para este cliente…" onChange={e=>{setDraft(e.target.value);clientId.current=crypto.randomUUID();setNotice('');}}/><div><small>{draft.length}/2000 · {thread?.status==='closed'?'Enviar uma resposta reabre este atendimento.':'A resposta fica vinculada somente a este ticket.'}</small><button type="submit" className="portal-primary" disabled={busy||!draft.trim()}>{busy?'Salvando…':'Enviar resposta'}<Icon name="send" size={16}/></button></div></form>
+    <footer className="support-ticket-footer"><span><Icon name="shield" size={15}/>Histórico privado do cliente e da equipe.</span><button type="button" className="portal-outline" onClick={close} disabled={busy||thread?.status==='closed'}><Icon name="check" size={15}/>{thread?.status==='closed'?'Atendimento encerrado':'Encerrar atendimento'}</button></footer>
+   </>:null}
+  </section>}
+ </div>;
+}

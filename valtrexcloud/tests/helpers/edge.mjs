@@ -28,7 +28,7 @@ export async function fixture(){
       if(existing){Object.assign(existing,v);matching=[existing];}else{const row={id:webcrypto.randomUUID(),created_at:new Date().toISOString(),state:'pending',attempts:0,detail:'',archived:false,...v};rows.push(row);matching=[row];}
     }else if(action==='update'){matching.forEach(r=>Object.assign(r,v));}else if(action==='delete'){for(const row of matching)rows.splice(rows.indexOf(row),1);}
    }
-   if(order)matching.sort((a,b)=>(order[0]==='sort_id'?(BigInt(a.message_id)>BigInt(b.message_id)?1:BigInt(a.message_id)<BigInt(b.message_id)?-1:0):String(a[order[0]]).localeCompare(String(b[order[0]])))*(order[1]?.ascending===false?-1:1));
+   if(order)matching.sort((a,b)=>(order[0]==='sort_id'?(BigInt(a.message_id)>BigInt(b.message_id)?1:BigInt(a.message_id)<BigInt(b.message_id)?-1:0):order[0]==='id'&&/^\d+$/.test(String(a.id))&&/^\d+$/.test(String(b.id))?(BigInt(a.id)>BigInt(b.id)?1:BigInt(a.id)<BigInt(b.id)?-1:0):String(a[order[0]]).localeCompare(String(b[order[0]])))*(order[1]?.ascending===false?-1:1));
    return {data:structuredClone(matching.slice(offset,offset+limit).map(r=>columns&&columns!=='*'?Object.fromEntries(columns.split(',').filter(k=>Object.hasOwn(r,k)).map(k=>[k,r[k]])):r)),count:matching.length,error:null};
   }return q;
  }};

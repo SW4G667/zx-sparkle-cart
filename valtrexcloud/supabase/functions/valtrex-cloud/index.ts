@@ -856,6 +856,11 @@ function publicLink(value: any) {
   return u.toString();
 }
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function stableProduct(value:any):string {
+ if(Array.isArray(value))return '['+value.map(stableProduct).join(',')+']';
+ if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+stableProduct(value[key])).join(',')+'}';
+ return JSON.stringify(value);
+}
 async function productPortal(req: Request, path: string, tenant: any) {
   const { data: catalog, error } = await db.from('valtrex_product_catalogs').select('*').eq('tenant_id', tenant.id).maybeSingle();
   if (error) return json({ error: 'Catálogo indisponível.' }, 503);
@@ -871,16 +876,28 @@ async function productPortal(req: Request, path: string, tenant: any) {
     let payload; try { payload = cleanProduct(input); } catch { return json({error:'Informe nome, descrição e tipo de entrega válidos.'},400); }
     const robuxStore=(catalog?.products||[]).some((p:any)=>p.kind==='robux');
     if((input.kind==='robux')!==robuxStore)return json({error:'Use o editor correspondente ao tipo deste bot.'},409);
+    const requestId=input.clientId;
+    if(requestId!==undefined&&!uuidPattern.test(requestId))return json({error:'Identificador da solicitação inválido.'},400);
     const creating = !input.productId;
     if(robuxStore&&(creating||input.productId!=='robux_store'))return json({error:'Atualize a configuração da loja de Robux existente.'},400);
     if(!creating&&payload.initialOption)return json({error:'A opção inicial só pode ser criada junto com um produto novo.'},400);
     if((payload.appearance||payload.initialOption)&&catalog?.bridge_version!==2)return json({error:'Atualize a integração do bot para R70 antes de personalizar ou criar opções pelo site.'},409);
-    const productId = creating ? `cloud_${crypto.randomUUID().replaceAll('-','')}` : String(input.productId);
+    const productId = creating ? `cloud_${String(requestId||crypto.randomUUID()).replaceAll('-','')}` : String(input.productId);
+    async function replay(){
+     if(!requestId)return null;
+     const {data:previous,error}=await db.from('valtrex_product_commands').select('id,tenant_id,product_id,action,payload,base_revision,state').eq('id',requestId).maybeSingle();
+     if(error)return json({error:'Não foi possível consultar esta solicitação. Tente novamente.'},503);
+     if(!previous)return null;
+     if(previous.tenant_id!==tenant.id||previous.product_id!==productId||previous.action!==(creating?'create':'edit')||stableProduct(previous.payload)!==stableProduct(payload)||(previous.base_revision||null)!==(creating?null:input.baseRevision))return json({error:'Esta solicitação já foi usada para outra alteração.'},409);
+     return json({command:{id:previous.id,state:previous.state},pending:previous.state==='pending',repeated:true});
+    }
+    const prior=await replay();if(prior)return prior;
     const existing = (catalog?.products || []).find((p:any)=>p.id === productId);
     if (!creating && (!existing || existing.revision !== input.baseRevision)) return json({error:'O produto mudou. Atualize o catálogo antes de editar.'},409);
     if (creating && (catalog?.products || []).length >= 500) return json({error:'Limite de 500 produtos no catálogo web.'},409);
-    const {data: command, error: insertError} = await db.from('valtrex_product_commands').insert({tenant_id:tenant.id,product_id:productId,
+    const {data: command, error: insertError} = await db.from('valtrex_product_commands').insert({...(requestId?{id:requestId}:{}),tenant_id:tenant.id,product_id:productId,
       action:creating?'create':'edit',payload,base_revision:creating?null:existing.revision}).select('id,state').single();
+    if(insertError?.code==='23505'&&requestId){const repeated=await replay();if(repeated)return repeated;}
     if (insertError) return json({error:insertError.code==='23505'?'Já existe uma alteração pendente para este produto.':'Não foi possível salvar a solicitação.'},insertError.code==='23505'?409:503);
     return json({command, pending:true},202);
   }
@@ -1046,7 +1063,11 @@ async function managerSupport(req:Request,path:string) {
  // managerSite already validates the Manager's Discord bot identity.
  if(path==='support'&&req.method==='GET'){
  const {data,error}=await db.from('valtrex_support_threads').select('id,tenant_id,owner_id,status,topic,updated_at,owner_sent_at,support_sent_at,support_read_at').order('updated_at',{ascending:false}).limit(50);
- return error?json({error:'Atendimentos indisponíveis.'},503):json({threads:data||[]});
+ if(error)return json({error:'Atendimentos indisponíveis.'},503);
+ const ids=[...new Set((data||[]).map((t:any)=>String(t.tenant_id)))];
+ const labels=new Map<string,string>();
+ if(ids.length){const {data:tenants}=await db.from('valtrex_tenants').select('id,label').in('id',ids);for(const t of tenants||[])labels.set(t.id,String(t.label||t.id));}
+ return json({threads:(data||[]).map((t:any)=>({...t,application_label:labels.get(t.tenant_id)||t.tenant_id}))});
  }
  const match=path.match(/^support\/([0-9a-f-]{36})(?:\/(reply|close))?$/);
  if(!match||!uuidPattern.test(match[1]))return json({error:'Atendimento não encontrado.'},404);
@@ -1054,8 +1075,15 @@ async function managerSupport(req:Request,path:string) {
  if(error)return json({error:'Atendimento indisponível.'},503);
  if(!thread)return json({error:'Atendimento não encontrado.'},404);
  if(req.method==='GET'&&!match[2]){
- const data=await chatData(thread);
- if(data.messages.length)await db.from('valtrex_support_threads').update({support_read_at:data.messages.at(-1).created_at}).eq('id',thread.id);
+ const before=new URL(req.url).searchParams.get('before')||'';
+ if(before&&(!/^\d{1,16}$/.test(before)||!Number.isSafeInteger(Number(before))))return json({error:'Página inválida.'},400);
+ const data=await chatData(thread,before);
+ if(!before&&data.messages.length){
+  const readUntil=new Date(Math.max(Date.parse(thread.support_read_at)||0,Date.parse(data.messages.at(-1).created_at)||0)).toISOString();
+  const {error:readError}=await db.from('valtrex_support_threads').update({support_read_at:readUntil}).eq('id',thread.id);
+  if(readError)return json({error:'Leitura do atendimento não confirmada. Tente novamente.'},503);
+  data.thread.supportReadAt=readUntil;
+ }
  return json({...data,tenantId:thread.tenant_id,ownerId:thread.owner_id});
  }
  if(req.method==='POST'&&match[2]==='reply'){

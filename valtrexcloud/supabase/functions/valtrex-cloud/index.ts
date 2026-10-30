@@ -584,13 +584,21 @@ async function portal(req: Request, path: string) {
   }
   if(path.startsWith('platform/'))return platformPortal(req,path.slice(9),session);
   if (path === 'me' && req.method === 'GET') {
-    const [{ data: apps, error }, { data: managedApps, error: managedError }] = await Promise.all([
+    const [{ data: initialApps, error }, { data: managedApps, error: managedError }] = await Promise.all([
       db.from('valtrex_tenants').select('id,label,client_id,guild_id,role_id,bot_seen_at,created_at')
         .eq('owner_user_id', session.discord_user_id).order('created_at', { ascending: false }),
       db.from('valtrex_managed_apps').select('manager_app_id,bot_id,label,profile,status,expires_at,synced_at')
         .eq('owner_user_id', session.discord_user_id).order('synced_at', { ascending: false }),
     ]);
     if (error || managedError) return json({ error: 'Não foi possível carregar suas aplicações.' }, 503);
+    let apps=initialApps||[];
+    // Catálogos enviados por Managers anteriores também ganham um workspace
+    // assim que o proprietário entrar, sem esperar o primeiro heartbeat.
+    if((managedApps||[]).some((a:any)=>validId(a.bot_id)&&!apps.some((t:any)=>t.id===a.bot_id))){
+      await ensureManagedWorkspaces((managedApps||[]).map((a:any)=>({...a,owner_user_id:session.discord_user_id})));
+      const refreshed=await db.from('valtrex_tenants').select('id,label,client_id,guild_id,role_id,bot_seen_at,created_at').eq('owner_user_id',session.discord_user_id).order('created_at',{ascending:false});
+      if(!refreshed.error)apps=refreshed.data||apps;
+    }
     const role=await siteRole(session.discord_user_id);
     return json({ isPlatformAdmin:role.admin, user: { id: session.discord_user_id, name: session.username,
       avatar: session.avatar_hash ? `https://cdn.discordapp.com/avatars/${session.discord_user_id}/${session.avatar_hash}.png?size=128` : '' },
@@ -630,6 +638,37 @@ async function managerIdentity(req: Request) {
   return null;
 }
 
+async function ensureManagedWorkspaces(rows:any[]){
+  const grouped=new Map<string,any[]>();
+  for(const row of rows){if(!validId(row.bot_id)||!validId(row.owner_user_id))continue;grouped.set(row.bot_id,[...(grouped.get(row.bot_id)||[]),row]);}
+  const candidates=[...grouped.entries()].filter(([,values])=>new Set(values.map((r:any)=>r.owner_user_id)).size===1);
+  for(let offset=0;offset<candidates.length;offset+=50){
+    const chunk=candidates.slice(offset,offset+50),ids=chunk.map(([id])=>id);
+    const catalog=await db.from('valtrex_managed_apps').select('bot_id,owner_user_id').in('bot_id',ids);
+    if(catalog.error)throw Error('Workspace ownership unavailable');
+    const {data:existing,error}=await db.from('valtrex_tenants').select('id,owner_user_id').in('id',ids);
+    if(error)throw Error('Workspace catalog unavailable');
+    const missing=[];
+    for(const [id,values] of chunk){
+      const row=values[0],current=(existing||[]).find((t:any)=>t.id===id);
+      if(!(catalog.data||[]).some((a:any)=>a.bot_id===id&&a.owner_user_id===row.owner_user_id)||(catalog.data||[]).some((a:any)=>a.bot_id===id&&a.owner_user_id!==row.owner_user_id))continue;
+      if(!current){
+        // A chave provisória é aleatória e nunca é entregue ao navegador. O
+        // bootstrap autenticado pelo token real do bot cria a capacidade real.
+        missing.push({id,label:row.label||'Aplicação',owner_user_id:row.owner_user_id,bot_key_hash:await sha(crypto.randomUUID()+crypto.randomUUID())});
+      }else if(current.owner_user_id===null){
+        const result=await db.from('valtrex_tenants').update({owner_user_id:row.owner_user_id}).eq('id',id).is('owner_user_id',null);
+        if(result.error)throw Error('Workspace owner unavailable');
+      }
+      // Um proprietário já definido nunca é sobrescrito pelo catálogo.
+    }
+    if(missing.length){
+      const result=await db.from('valtrex_tenants').upsert(missing,{onConflict:'id',ignoreDuplicates:true});
+      if(result.error)throw Error('Workspace registration unavailable');
+    }
+  }
+}
+
 async function managerSync(req: Request) {
   if (req.method !== 'POST') return json({ error: 'Método inválido.' }, 405);
   if (!(await limit(req, 'manager_sync', 30))) return json({ error: 'Aguarde antes de sincronizar novamente.' }, 429);
@@ -653,6 +692,7 @@ async function managerSync(req: Request) {
     return json({ error: 'IDs duplicados.' }, 400);
   const { data: synced, error } = await db.rpc('valtrex_replace_managed_apps', { p_apps: rows });
   if (error) return json({ error: 'Não foi possível sincronizar aplicações.' }, 503);
+  await ensureManagedWorkspaces(rows);
   const catalog = input.catalog;
   if (catalog && typeof catalog === 'object') {
     const invite = String(catalog.officialInvite || '');
@@ -1190,12 +1230,12 @@ function cleanCloudAI(input:any){
  return {...out,format:input.format,name:input.name.trim(),footer:input.footer.trim(),accent:input.accent||'',communityChannels:[...new Set(input.communityChannels)]};
 }
 async function readCloudAccess(tenant:any){
- const [{data:grant,error:ge},{data:apps,error:ae},{data:user,error:ue}]=await Promise.all([db.from('valtrex_ai_access').select('enabled,tickets,community,owner_user_id,updated_at').eq('tenant_id',tenant.id).maybeSingle(),db.from('valtrex_managed_apps').select('status,expires_at').eq('bot_id',tenant.id).eq('owner_user_id',tenant.owner_user_id),db.from('valtrex_site_user_access').select('ai_managed,ai_enabled,ai_tickets,ai_community,updated_at').eq('user_id',tenant.owner_user_id).maybeSingle()]);
- if(ge||ae||ue)throw Error('AI authorization unavailable');
+ const [{data:grant,error:ge},{data:apps,error:ae},{data:user,error:ue},{data:service,error:se}]=await Promise.all([db.from('valtrex_ai_access').select('enabled,tickets,community,owner_user_id,updated_at').eq('tenant_id',tenant.id).maybeSingle(),db.from('valtrex_managed_apps').select('status,expires_at').eq('bot_id',tenant.id).eq('owner_user_id',tenant.owner_user_id),db.from('valtrex_site_user_access').select('ai_managed,ai_enabled,ai_tickets,ai_community,updated_at').eq('user_id',tenant.owner_user_id).maybeSingle(),db.from('valtrex_ai_service').select('enabled').eq('id',1).maybeSingle()]);
+ if(ge||ae||ue||se)throw Error('AI authorization unavailable');
  const active=(apps||[]).some((a:any)=>a.status==='active'&&a.expires_at&&Date.parse(a.expires_at)>Date.now());
  // An explicit user revocation overrides every earlier application grant.
  const managed=user?.ai_managed===true,allowed=managed?user.ai_enabled===true:grant?.enabled===true&&grant.owner_user_id===tenant.owner_user_id;
- return {allowed,tickets:allowed&&(managed?user.ai_tickets:grant?.tickets)===true,community:allowed&&(managed?user.ai_community:grant?.community)===true,activeSubscription:active,scope:managed?'user':'application',updatedAt:(managed?user.updated_at:grant?.updated_at)||null};
+ return {allowed,globalEnabled:service?.enabled!==false,tickets:allowed&&(managed?user.ai_tickets:grant?.tickets)===true,community:allowed&&(managed?user.ai_community:grant?.community)===true,activeSubscription:active,scope:managed?'user':'application',updatedAt:(managed?user.updated_at:grant?.updated_at)||null};
 }
 async function cloudService(){
  const {data,error}=await db.from('valtrex_ai_service').select('*').eq('id',1).maybeSingle();if(error)throw Error('AI service unavailable');if(data)return data;
@@ -1221,7 +1261,7 @@ async function managerCloudAI(req:Request,path:string){
   try{const r=await fetch(cloudAIEndpoint,{method:'POST',headers:{'content-type':'application/json','x-cloud-permit':permit},body:payload,signal:AbortSignal.timeout(55000),redirect:'error'});if(!r.ok)return json({error:'O modelo não confirmou o teste.'},503);const result=await r.json();return typeof result.text==='string'&&result.text?json({ok:true,text:scrubCloudText(result.text,1700),model:String(result.model||'').slice(0,120)}):json({error:'Resposta vazia.'},503);}catch{return json({error:'O modelo não respondeu a tempo.'},503);}
  }
  if(path==='service'&&req.method==='GET'){const service=await cloudService();let health:any=null;try{const r=await fetch(cloudAIEndpoint.replace('/api/cloud-ai/generate','/health'),{signal:AbortSignal.timeout(8000),redirect:'error'});if(r.ok)health=await r.json();}catch{}return json({enabled:service.enabled,ready:health?.service==='cloud-support-ai'&&health?.state==='ready',state:health?.state||'unavailable',model:health?.model||null});}
- if(path==='service'&&req.method==='POST'){const input=await body(req);if(typeof input.enabled!=='boolean')return json({error:'Estado inválido.'},400);await cloudService();const {error}=await db.from('valtrex_ai_service').update({enabled:input.enabled,updated_at:new Date().toISOString()}).eq('id',1);return error?json({error:'Não foi possível confirmar a alteração.'},503):json({ok:true});}
+ if(path==='service'&&req.method==='POST'){const input=await body(req);if(typeof input.enabled!=='boolean'||!validId(input.actorId))return json({error:'Estado inválido.'},400);if(!(await siteRole(input.actorId)).owner)return json({error:'Somente o proprietário do Manager pode alterar o serviço.'},403);await cloudService();const {error}=await db.from('valtrex_ai_service').update({enabled:input.enabled,updated_at:new Date().toISOString()}).eq('id',1);return error?json({error:'Não foi possível confirmar a alteração.'},503):json({ok:true});}
  if(path==='access'&&req.method==='GET'){const botId=new URL(req.url).searchParams.get('botId');if(!validId(botId))return json({error:'Aplicação inválida.'},400);const {data:tenant,error}=await db.from('valtrex_tenants').select('id,owner_user_id').eq('id',botId).maybeSingle();if(error)return json({error:'Permissão indisponível.'},503);const access=tenant?await readCloudAccess(tenant):{allowed:false,tickets:false,community:false};return json({access:{...access,enabled:access.allowed}});}
  if(path==='access'&&req.method==='POST'){
   const input=await body(req);if(!validId(input.botId)||!validId(input.ownerId)||!validId(input.actorId)||['enabled','tickets','community'].some(k=>typeof input[k]!=='boolean'))return json({error:'Permissão inválida.'},400);
@@ -1234,7 +1274,7 @@ async function managerCloudAI(req:Request,path:string){
 }
 function scrubCloudText(value:any,max=1800){return String(value||'').replace(/(?:mfa\.[\w-]{20,}|[\w-]{24,}\.[\w-]{6}\.[\w-]{25,}|\b(?:sk-|gsk_|hf_|vc_live_|bhk_)[A-Za-z0-9_-]{12,})/g,'[credencial removida]').replace(/\b(?:senha|password|api[ _-]?key|token)\s*[:=]\s*\S+/gi,'[credencial removida]').slice(0,max);}
 function b64cloud(value:Uint8Array){return btoa(String.fromCharCode(...value)).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');}
-function cloudPurposeAllowed(access:any,settings:any,purpose:string){return access.allowed&&settings.enabled&&(purpose==='preview'?(access.tickets||access.community):purpose==='community'?access.community&&settings.communityEnabled:access.tickets&&settings.ticketsEnabled&&(purpose!=='summary'||settings.summaryOnClaim));}
+function cloudPurposeAllowed(access:any,settings:any,purpose:string){return access.allowed&&access.globalEnabled!==false&&settings.enabled&&(purpose==='preview'?(access.tickets||access.community):purpose==='community'?access.community&&settings.communityEnabled:access.tickets&&settings.ticketsEnabled&&(purpose!=='summary'||settings.summaryOnClaim));}
 async function signCloudPermit(tenantId:string,purpose:string,payload:string,service:any){
  const now=Math.floor(Date.now()/1000),claims={iss:BASE,aud:'cloud-support',tenant:tenantId,purpose,iat:now,exp:now+60,jti:crypto.randomUUID(),body_sha256:await sha(payload)};
  const first=b64cloud(encoder.encode(JSON.stringify({alg:'ES256',typ:'JWT',kid:service.kid})))+'.'+b64cloud(encoder.encode(JSON.stringify(claims)));

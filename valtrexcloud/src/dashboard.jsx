@@ -1,7 +1,9 @@
+import ApplicationPicker from './application-picker.jsx';
+import {ownedApps,resolveApplication} from './application-model.mjs';
 import PlatformAdmin from './platform-admin.jsx';
 import {AISettings,TicketInbox,TicketSettings} from './service-workspace.jsx';
 import GiftStudio from './gift-studio.jsx';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Icon from './icons.jsx';
 import { BRAND, displayName } from './branding.mjs';
 import { readPreferences, normalizePreferences, PUBLIC_PRESETS, filterApps, safeInvite, formatDate } from './preferences.mjs';
@@ -67,25 +69,11 @@ function expiryLabel(value) {
   if (days <= 0) return 'Plano vencido';
   return days === 1 ? 'Vence amanhã' : `Vence em ${days} dias`;
 }
-function ownedApps(session) {
-  const cloud = session?.apps || [];
-  const managed = session?.managedApps || [];
-  const matched = new Set();
-  const combined = managed.map(item => {
-    const tenant = cloud.find(app => app.id === item.bot_id || app.id === item.manager_app_id);
-    if (tenant) matched.add(tenant.id);
-    return { id: item.manager_app_id, label: displayName(item.label), cloudId: tenant?.id || null,
-      profile: item.profile, status: item.status, expiresAt: item.expires_at,
-      botId: item.bot_id, source: 'manager' };
-  });
-  for (const item of cloud) if (!matched.has(item.id)) combined.push({ id: item.id, label: displayName(item.label),
-    cloudId: item.id, profile: 'other', status: 'unknown', expiresAt: null, source: 'cloud' });
-  return combined;
-}
-
 export default function Dashboard() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const sessionSequence=useRef(0);
+  const loadSession=useCallback(async()=>{const sequence=++sessionSequence.current;const data=await request('/me');if(sequence===sessionSequence.current)setSession(data);return data;},[]);
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
   const [tab, setTab] = useState(() => nav.some(item => item[0] === window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'overview');
@@ -103,7 +91,11 @@ export default function Dashboard() {
   useEffect(() => { try { localStorage.setItem('cloud.preferences.v1', JSON.stringify(preferences)); } catch {} }, [preferences]);
   useEffect(() => { if(window.location.hash!==`#${tab}`) window.history.pushState(null, '', `#${tab}`); window.scrollTo(0,0); }, [tab]);
   useEffect(() => { const changed = () => { const next = window.location.hash.slice(1)||'overview'; if (nav.some(item => item[0] === next)) setTab(next); }; window.addEventListener('hashchange', changed); return () => window.removeEventListener('hashchange', changed); }, []);
-  const [appId, setAppId] = useState('');
+  const [selectionKey,setSelectionKey] = useState('');
+  const visibleApps = ownedApps(session);
+  const selectedApplication = resolveApplication(visibleApps,selectionKey);
+  const appId = selectedApplication?.cloudId || '';
+  useEffect(() => { setSelectionKey(selectedApplication?.key || ''); },[selectedApplication?.key]);
   const [config, setConfig] = useState(null);
   const [detailRefresh, setDetailRefresh] = useState(0);
   const appRef = useRef(appId); appRef.current = appId;
@@ -119,20 +111,21 @@ export default function Dashboard() {
   const [managedDetail, setManagedDetail] = useState('');
   const [catalog, setCatalog] = useState({ plans: [], officialInvite: null });
 
-  useEffect(() => { request('/me').then(data => { setSession(data); setAppId(data.apps?.[0]?.id || ''); }).catch(err => { if (!/Entre novamente/.test(err.message)) setError(err.message); }).finally(() => setLoading(false)); }, []);
+  useEffect(() => { loadSession().catch(err => { if (!/Entre novamente/.test(err.message)) setError(err.message); }).finally(() => setLoading(false)); return()=>{sessionSequence.current++;}; }, [loadSession]);
   useEffect(() => {
     if (!session) return;
     let alive = true, busy = false;
-    async function refreshRole() {
+    async function refreshSession() {
       if (busy || document.visibilityState !== 'visible') return;
       busy = true;
-      try { const next = await request('/me'); if (alive) setSession(current => current ? { ...current, isPlatformAdmin: next.isPlatformAdmin === true } : current); }
+      try { if(alive)await loadSession(); }
       catch {} finally { busy = false; }
     }
-    const timer = setInterval(refreshRole, 30000);
-    window.addEventListener('focus', refreshRole);
-    return () => { alive = false; clearInterval(timer); window.removeEventListener('focus', refreshRole); };
-  }, [Boolean(session)]);
+    const timer = setInterval(refreshSession, 15000);
+    window.addEventListener('focus', refreshSession);
+    document.addEventListener('visibilitychange',refreshSession);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener('focus', refreshSession); document.removeEventListener('visibilitychange',refreshSession); };
+  }, [session?.user?.id,loadSession]);
   useEffect(() => { if (session && !session.isPlatformAdmin && tab === 'platform') setTab('overview'); }, [session?.isPlatformAdmin, tab]);
 
   useEffect(() => {
@@ -143,7 +136,7 @@ export default function Dashboard() {
     return () => controller.abort();
   }, []);
   useEffect(() => {
-    if (!session || !appId) return;
+    if (!session?.user?.id || !appId) { setConfig(null); setGifts([]); setLogs([]); setSecret(''); return; }
     let cancelled = false;
     setConfig(null); setGifts([]); setLogs([]); setSecret(''); setCreatedLinks([]);
     Promise.allSettled([request(`/apps/${appId}/config`), request(`/apps/${appId}/gifts`), request(`/apps/${appId}/logs`)])
@@ -156,15 +149,15 @@ export default function Dashboard() {
       } })
       .catch(err => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
-  }, [session, appId, detailRefresh]);
+  }, [session?.user?.id, appId, detailRefresh]);
   const app = session?.apps?.find(item => item.id === appId);
-  const visibleApps = ownedApps(session);
   const expiringApps = visibleApps.filter(item => item.source === 'manager' && item.expiresAt &&
     new Date(item.expiresAt).getTime() - Date.now() <= 7 * 86400000);
   const matchingApps = filterApps(visibleApps, query, statusFilter, preferences.sort).filter(item => !favoritesOnly || preferences.favorites.includes(`${item.source}:${item.id}`));
   const toggleFavorite = item => setPreferences(current => { const id = `${item.source}:${item.id}`; return normalizePreferences({ ...current, favorites: current.favorites.includes(id) ? current.favorites.filter(value => value !== id) : [...current.favorites, id] }); });
   const selectedManaged = visibleApps.find(item => item.id === managedDetail);
-  const openApp = item => { if (saving) return; if (item.cloudId) { setAppId(item.cloudId); setTab('cloud'); } else { setManagedDetail(item.id); setTab('apps'); } setMenuOpen(false); };
+  const chooseApplication = item => { if(saving)return;setSelectionKey(item.key);setManagedDetail(item.id);setTab(item.cloudId?'overview':'apps'); };
+  const openApp = item => { if(saving)return;chooseApplication(item);setTab(item.cloudId?'cloud':'apps');setMenuOpen(false); };
   const call = (path, options = {}) => request(`/apps/${appId}${path}`, { ...options, csrf: session.csrf });
   const saveConfig = async data => {
     setSaving(true); setError(''); setFlash('');
@@ -217,17 +210,15 @@ export default function Dashboard() {
   const logout = async () => { try { await request('/logout', { method: 'POST', csrf: session.csrf }); window.location.assign('/dashboard'); } catch (error) { setError('Não consegui encerrar a sessão. Tente sair novamente.'); } };
   const copyText = async text => { try { if (!navigator.clipboard) throw Error(); await navigator.clipboard.writeText(text); setFlash('Copiado para a área de transferência.'); } catch { setError('O navegador não permitiu copiar. Selecione o texto e copie manualmente.'); } };
   const openPreview = async (mode = '') => { const popup = window.open('', '_blank'); if (!popup) { setError('Permita pop-ups para abrir a prévia.'); return; } popup.opener = null; try { const result = await call('/preview', { method: 'POST' }); const url = new URL(result.link, window.location.origin); if (url.protocol !== 'https:' && url.origin !== window.location.origin) throw new Error('Link de prévia inválido.'); if(mode==='loading')url.searchParams.set('loading','1'); popup.location.href = url.href; } catch (error) { popup.close(); setError(error.message); } };
-  const refreshApps = async () => { setRefreshing(true); setError(''); try { const data = await request('/me'); setSession(data); if (!data.apps?.some(item => item.id === appId)) { setAppId(data.apps?.[0]?.id || ''); setConfig(null); setGifts([]); setLogs([]); } setDetailRefresh(value => value + 1); setFlash('Aplicações atualizadas.'); } catch (err) { setError(err.message); } finally { setRefreshing(false); } };
+  const refreshApps = async () => { setRefreshing(true); setError(''); try { await loadSession(); setFlash('Aplicações atualizadas.'); } catch (err) { setError(err.message); } finally { setRefreshing(false); } };
 
   if (loading) return <div className="portal-loading" role="status">Carregando seu painel…</div>;
   if (!session) return <Login theme={resolvedTheme}/>;
   const count = visibleApps.length;
   return <div className={`portal-app ${tab==='chat'?'support-active':''} cloud-density-${preferences.density} ${preferences.reducedMotion ? 'cloud-reduce-motion' : ''}`} data-theme={resolvedTheme}>{menuOpen && <button className="portal-menu-backdrop" aria-label="Fechar menu" onClick={() => setMenuOpen(false)}/>}<aside id="workspace-navigation" className={`portal-sidebar${menuOpen ? ' open' : ''}`}>
-    <Brand/>
+    <div className="portal-sidebar-head"><Brand/><button className="portal-sidebar-close" type="button" aria-label="Fechar navegação" onClick={()=>setMenuOpen(false)}><Icon name="close" size={18}/></button></div>
     <span className="portal-sidebar-label">WORKSPACE</span>
-    <div className="portal-app-select"><span>Cloud da aplicação</span><select aria-label="Aplicação atual" value={appId} onChange={e => { setAppId(e.target.value); setTab('overview'); }} disabled={saving || !session.apps?.length}>
-      {!session.apps?.length && <option value="">Nenhum bot configurado</option>}
-      {session.apps?.map(item => <option key={item.id} value={item.id}>{displayName(item.label)}{!preferences.hideIds && ` · ${item.id.slice(-4)}`}</option>)}</select></div>
+    <ApplicationPicker apps={visibleApps} selected={selectedApplication} onSelect={chooseApplication} disabled={saving} hideIds={preferences.hideIds} refreshing={refreshing} onRefresh={refreshApps}/>
     <nav aria-label="Navegação do painel">{nav.filter(([key])=>key!=='platform'||session.isPlatformAdmin).map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} className={tab === key ? 'active' : ''}
       onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><Icon name={key==='cloud'?'shield':key}/><span>{label}</span></button>)}</nav>
     <a className="portal-sidebar-plans" href="/plans"><Icon name="subscriptions"/>Conhecer os planos<Icon name="external" size={14}/></a>
@@ -245,7 +236,7 @@ export default function Dashboard() {
           {count ? <ApplicationGrid apps={filterApps(visibleApps,'','all',preferences.sort)} open={openApp} preferences={preferences} toggleFavorite={toggleFavorite} profileLabels={appProfile} statusLabels={appStatus} limit={4}/> : <Empty title="Nenhuma aplicação vinculada" text="Abra /painel → Cloud no seu bot e vincule sua conta Discord como proprietária. Depois atualize a lista."/>}</Section></>}
       {tab === 'apps' && <Section eyebrow="APLICAÇÕES" title="Seus bots" description="Dados do Cloud compartilhado, vinculados à identidade autorizada no Discord.">
         <AppToolbar query={query} setQuery={setQuery} status={statusFilter} setStatus={setStatusFilter} preferences={preferences} update={updatePreferences} favoritesOnly={favoritesOnly} setFavoritesOnly={setFavoritesOnly}/><p className="cloud-result-count">{matchingApps.length} de {count} aplicação(ões)</p>{matchingApps.length ? <><ApplicationGrid apps={matchingApps} open={openApp} preferences={preferences} toggleFavorite={toggleFavorite} profileLabels={appProfile} statusLabels={appStatus}/>
-          {selectedManaged && !selectedManaged.cloudId && <div className="portal-managed-detail"><h3>{selectedManaged.label}</h3><dl><div><dt>Aplicação</dt><dd>{preferences.hideIds ? 'ID oculto' : selectedManaged.id}<button className="cloud-icon-button" aria-label="Copiar ID da aplicação" onClick={()=>copyText(selectedManaged.id)}><Icon name="copy" size={15}/></button></dd></div><div><dt>Produto</dt><dd>{appProfile[selectedManaged.profile]}</dd></div><div><dt>Plano</dt><dd>{appStatus[selectedManaged.status] || appStatus.unknown}</dd></div><div><dt>Vencimento</dt><dd>{selectedManaged.expiresAt ? formatDate(selectedManaged.expiresAt,preferences.timezone) : 'Não informado'}</dd></div></dl><p>Para renovar o plano ou configurar o bot, use o servidor oficial no Discord. O Cloud aparece aqui quando for vinculado no /painel do bot.</p></div>}</> : <Empty title={count ? 'Nenhum resultado' : 'Sem aplicações'} text={count ? 'Tente outro nome, ID ou estado do plano.' : 'A vinculação depende do proprietário salvo no Manager ou no Cloud de cada bot.'}/>}</Section>}
+          {selectedManaged && !selectedManaged.cloudId && <div className="portal-managed-detail"><h3>{selectedManaged.label}</h3><dl><div><dt>Aplicação</dt><dd>{preferences.hideIds ? 'ID oculto' : selectedManaged.id}<button className="cloud-icon-button" aria-label="Copiar ID da aplicação" onClick={()=>copyText(selectedManaged.id)}><Icon name="copy" size={15}/></button></dd></div><div><dt>Produto</dt><dd>{appProfile[selectedManaged.profile]}</dd></div><div><dt>Plano</dt><dd>{appStatus[selectedManaged.status] || appStatus.unknown}</dd></div><div><dt>Vencimento</dt><dd>{selectedManaged.expiresAt ? formatDate(selectedManaged.expiresAt,preferences.timezone) : 'Não informado'}</dd></div></dl><p>Para renovar o plano ou configurar o bot, use o servidor oficial no Discord. A aplicação aparece no workspace assim que o Manager confirmar o ID do bot. A sincronização acontece automaticamente.</p></div>}</> : <Empty title={count ? 'Nenhum resultado' : 'Sem aplicações'} text={count ? 'Tente outro nome, ID ou estado do plano.' : 'A vinculação depende do proprietário salvo no Manager ou no Cloud de cada bot.'}/>}</Section>}
       {tab === 'verification' && <Section eyebrow="VERIFICAÇÃO" title="Acesso ao servidor" description="O botão publicado pelo bot cria uma autorização individual no Discord para cada pessoa.">
         {config ? <div className="portal-verification-grid"><div className="portal-verification-card"><span className="portal-overline">ESTADO ATUAL</span><h3>{config.secretConfigured && config.guildId ? 'Pronta para publicar' : 'Configuração pendente'}</h3><p>{config.secretConfigured && config.guildId ? 'Publique ou atualize o botão pelo /painel → Cloud → Autenticação no servidor principal.' : 'Cadastre o Client Secret e o servidor principal para ativar a verificação.'}</p><dl><div><dt>Contas verificadas</dt><dd>{config.verified ?? '—'}</dd></div><div><dt>Servidor principal</dt><dd>{config.guildId || 'Não definido'}</dd></div><div><dt>Cargo automático</dt><dd>{config.roleId || 'Não definido'}</dd></div><div><dt>Canal publicado</dt><dd>{config.verifyChannelId || 'Ainda não publicado'}</dd></div></dl><div className="portal-actions"><button className="portal-primary" onClick={() => setTab('cloud')}>Configurar OAuth2<Icon name="arrow" size={16}/></button><button className="portal-outline" onClick={() => setTab('appearance')}>Personalizar página</button></div></div><div className="portal-verification-aside"><span>COMO A PESSOA VÊ</span><strong>Verificar → Autorizar no Discord → Resultado</strong><p>A tela oficial mostra as permissões antes de qualquer acesso. Após autorizar, a pessoa chega à página de conclusão com a aparência da sua aplicação.</p><button onClick={openPreview}>Abrir prévia da página<Icon name="external" size={16}/></button></div></div> : <Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para ver a verificação."/>}</Section>}
       {tab === 'subscriptions' && <Section eyebrow="PLANOS" title="Planos e renovação" description="Consulte o prazo de cada bot. A compra e a renovação acontecem no servidor oficial no Discord.">

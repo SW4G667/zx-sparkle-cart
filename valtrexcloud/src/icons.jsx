@@ -1,6 +1,7 @@
 import React from 'react';
 
 const paths = {
+  chevron: <path d="m7 10 5 5 5-5"/>,
   platform: <><path d="M12 2 3 6v6c0 5 9 10 9 10s9-5 9-10V6l-9-4Z"/><path d="M8 12h8m-4-4v8"/></>,
   ai: <><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M12 2v4M8 12h.01M16 12h.01M9 16h6M1 11v5m22-5v5"/></>,
   tickets: <><path d="M3 4h18v5a3 3 0 0 0 0 6v5H3v-5a3 3 0 0 0 0-6V4Z"/><path d="M8 8h8M8 12h5M8 16h8"/></>,

@@ -32,11 +32,17 @@ export async function fixture(){
    return {data:structuredClone(matching.slice(offset,offset+limit).map(r=>columns&&columns!=='*'?Object.fromEntries(columns.split(',').filter(k=>Object.hasOwn(r,k)).map(k=>[k,r[k]])):r)),count:matching.length,error:null};
   }return q;
  }};
+ const media=new Map(),storageCalls=[];let bucket=null;const mediaState={available:true};
+ db.storage={getBucket:async()=>({data:bucket,error:bucket?null:{statusCode:'404'}}),createBucket:async(name,options)=>{storageCalls.push({kind:'bucket',name,options});if(!mediaState.available)return {error:{statusCode:'503'}};bucket={id:name,...options};return {data:bucket,error:null};},from:name=>({
+  list:async prefix=>({data:[...media].filter(([key])=>key.startsWith(prefix+'/')).map(([key,v])=>({name:key.slice(prefix.length+1),metadata:{size:v.bytes.length}})),error:null}),
+  upload:async(key,bytes,options)=>{storageCalls.push({kind:'upload',key,options});if(!mediaState.available)return {error:{statusCode:'503'}};media.set(key,{bytes:Uint8Array.from(bytes),options});return {data:{path:key},error:null};},
+  getPublicUrl:key=>({data:{publicUrl:`https://project.supabase.co/storage/v1/object/public/${name}/${key}`}})
+ })};
  const source=readFileSync(new URL('../../supabase/functions/valtrex-cloud/index.ts',import.meta.url),'utf8').replace(/^import .*?;\s*/u,'');
  vm.runInNewContext(transformSync(source,{loader:'ts',format:'iife',target:'es2022'}).code,{createClient:()=>db,Deno:{env:{get:n=>n==='SUPABASE_SERVICE_ROLE_KEY'?'test-role':null},serve:fn=>{handle=fn;}},fetch:async(url,options)=>{networkCalls.push({url:String(url),options});return externalFetch?externalFetch(url,options):Response.json({id:managerId,bot:true});},crypto:webcrypto,TextEncoder,TextDecoder,URL,URLSearchParams,Response,Request,AbortSignal,Uint8Array,Date,Math,atob,btoa,console},{timeout:2000});
  async function call(path,{method='GET',data,auth='portal',headers={}}={}){
   const base='https://valtrexapplications.vercel.app';const h={'content-type':'application/json',origin:base,...(auth==='portal'?{cookie:`vtx_portal=${cookie}`,'x-valtrex-csrf':csrf}:auth==='bot'?{authorization:`Bearer ${bridge}`,'x-valtrex-application':app}:auth==='manager'?{authorization:`Bot ${'token_'.repeat(10)}`} : {}),...headers};
   const r=await handle(new Request(`${base}/${path}`,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(data||{})}));return {status:r.status,body:await r.json()};
  }
- return {tables,call,calls,networkCalls,setFetch:fn=>{externalFetch=fn;},setManager:id=>{managerId=id;}};
+ return {tables,call,calls,networkCalls,media,storageCalls,mediaState,setFetch:fn=>{externalFetch=fn;},setManager:id=>{managerId=id;}};
 }

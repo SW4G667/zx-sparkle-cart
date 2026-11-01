@@ -1,8 +1,22 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.107.0';
 
 // O domínio pode ser trocado no deployment sem alterar o código ou os Gifts.
-const configuredBase = (Deno.env.get('VALTREX_CLOUD_PUBLIC_URL') || 'https://valtrexapplications.vercel.app').replace(/\/$/, '');
-const BASE = /^https:\/\/[^/\s?#]+$/.test(configuredBase) ? configuredBase : 'https://valtrexapplications.vercel.app';
+const DEFAULT_PUBLIC_ORIGIN = 'https://valtrexapplications.vercel.app';
+function publicOrigin(value:unknown):string|null {
+  if(typeof value!=='string'||value.length>300||/[\s\\\u0000-\u001f\u007f]/.test(value))return null;
+  try {
+    const url=new URL(value),host=url.hostname.toLowerCase();
+    if(url.protocol!=='https:'||url.username||url.password||url.port||url.pathname!=='/'||url.search||url.hash||
+      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(host)||
+      /(?:^|\.)(?:localhost|local|internal)$/.test(host))return null;
+    return url.origin;
+  }catch{return null;}
+}
+const configuredBase=publicOrigin(Deno.env.get('VALTREX_CLOUD_PUBLIC_URL'));
+const BASE=configuredBase||DEFAULT_PUBLIC_ORIGIN;
+// A origem do site e o emissor confiado pelo Space são configurações distintas.
+// Trocar o domínio público não altera automaticamente a identidade assinada da IA.
+const CLOUD_AI_ISSUER=publicOrigin(Deno.env.get('VALTREX_CLOUD_AI_ISSUER'))||DEFAULT_PUBLIC_ORIGIN;
 const CALLBACK = `${BASE}/api/auth/discord/callback`;
 // Client ID público da aplicação ValtrexApplications/Manager. O segredo nunca
 // entra no código ou no frontend e deve estar nos secrets da Edge Function.
@@ -77,7 +91,8 @@ function redirect(path: string, cookie = '') {
 function errorPage(status: string) { return redirect(`/result?status=${encodeURIComponent(status)}`); }
 function cookieValue(req: Request, name: string) {
   const match = (req.headers.get('cookie') || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : '';
+  if(!match)return '';
+  try{return decodeURIComponent(match[1]);}catch{return '';}
 }
 function validId(value: unknown) { return typeof value === 'string' && /^\d{15,22}$/.test(value); }
 function validImage(value: unknown) {
@@ -1229,7 +1244,7 @@ async function platformPortal(req:Request,path:string,session:any){
  if(!admin)return json({error:'Acesso restrito à administração do projeto.'},403);
  if(path==='status'&&req.method==='GET'){
   const {data:jobs,error}=await db.from('valtrex_manager_commands').select('id,kind,state,created_at,finished_at,result').order('created_at',{ascending:false}).limit(30);
-  return error?json({error:'Operações indisponíveis.'},503):json({status:control?.status||{},seenAt:control?.seen_at||null,jobs:jobs||[]});
+  return error?json({error:'Operações indisponíveis.'},503):json({status:control?.status||{},seenAt:control?.seen_at||null,jobs:jobs||[],site:{publicUrl:BASE,redirectUri:CALLBACK,https:true,configured:!!configuredBase,aiIssuer:CLOUD_AI_ISSUER}});
  }
  if(path==='commands'&&req.method==='POST'){
   const input=await body(req);if(!uuidPattern.test(input.clientId||'')||!['update_bot','host_test','site_url','gateway_save'].includes(input.kind)||!input.payload||typeof input.payload!=='object')return json({error:'Operação inválida.'},400);
@@ -1237,7 +1252,7 @@ async function platformPortal(req:Request,path:string,session:any){
   const payload=input.payload;
   if(input.kind==='update_bot'&&!/^[\w-]{1,120}$/.test(payload.appId||''))return json({error:'Aplicação inválida.'},400);
   if(input.kind==='host_test'&&(!['enzonic','xsystem','altare','heaven','monkey','doki','wispbyte','discloud','phanom','vertra','bothosting','shardcloud'].includes(payload.provider)||!Number.isInteger(payload.slot)||payload.slot<1||payload.slot>16))return json({error:'Servidor inválido.'},400);
-  if(input.kind==='site_url'){try{const u=new URL(payload.url);if(u.protocol!=='https:'||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw new Error();}catch{return json({error:'Use somente o domínio HTTPS do site.'},400);}}
+  if(input.kind==='site_url'){const origin=publicOrigin(payload.url);if(!origin)return json({error:'Use somente o domínio HTTPS público do site, sem usuário, porta ou caminho.'},400);payload.url=origin;}
   if(input.kind==='gateway_save'&&(payload.gateway!=='goatpay'||typeof payload.enabled!=='boolean'||payload.apiKey!==undefined&&(typeof payload.apiKey!=='string'||payload.apiKey.length>400||/[\s\x00-\x1f]/.test(payload.apiKey))))return json({error:'Configuração de gateway inválida.'},400);
   const {data:prior}=await db.from('valtrex_manager_commands').select('*').eq('id',input.clientId).maybeSingle();
   const serialized=JSON.stringify({kind:input.kind,payload});
@@ -1329,7 +1344,7 @@ function scrubCloudText(value:any,max=1800){return String(value||'').replace(/(?
 function b64cloud(value:Uint8Array){return btoa(String.fromCharCode(...value)).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');}
 function cloudPurposeAllowed(access:any,settings:any,purpose:string){return access.allowed&&access.globalEnabled!==false&&settings.enabled&&(purpose==='preview'?(access.tickets||access.community):purpose==='community'?access.community&&settings.communityEnabled:access.tickets&&settings.ticketsEnabled&&(purpose!=='summary'||settings.summaryOnClaim));}
 async function signCloudPermit(tenantId:string,purpose:string,payload:string,service:any){
- const now=Math.floor(Date.now()/1000),claims={iss:BASE,aud:'cloud-support',tenant:tenantId,purpose,iat:now,exp:now+60,jti:crypto.randomUUID(),body_sha256:await sha(payload)};
+ const now=Math.floor(Date.now()/1000),claims={iss:CLOUD_AI_ISSUER,aud:'cloud-support',tenant:tenantId,purpose,iat:now,exp:now+60,jti:crypto.randomUUID(),body_sha256:await sha(payload)};
  const first=b64cloud(encoder.encode(JSON.stringify({alg:'ES256',typ:'JWT',kid:service.kid})))+'.'+b64cloud(encoder.encode(JSON.stringify(claims)));
  const key=await crypto.subtle.importKey('jwk',JSON.parse(await open(service.private_key_cipher)),{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
  return first+'.'+b64cloud(new Uint8Array(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},key,encoder.encode(first))));

@@ -6,7 +6,7 @@ import {transformSync} from 'esbuild';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 export const app='1500042139491635200',other='2500042139491635200',user='12345678901234567',second='22345678901234567',manager='1506929376967790752';
 const bridge='bridge_0123456789012345678901234567890',cookie='c'.repeat(90),csrf='csrf-fixture';
-export async function fixture(){
+export async function fixture({env={},base='https://valtrexapplications.vercel.app'}={}){
  let externalFetch=null;const networkCalls=[];
  let handle;let managerId=manager;
  const tables={valtrex_tenants:[{id:app,owner_user_id:user,bot_key_hash:hash(bridge)},{id:other,owner_user_id:second,bot_key_hash:hash('different')}],valtrex_portal_sessions:[],valtrex_product_catalogs:[],valtrex_product_commands:[],valtrex_site_notices:[],valtrex_notice_reads:[]};
@@ -39,10 +39,13 @@ export async function fixture(){
   getPublicUrl:key=>({data:{publicUrl:`https://project.supabase.co/storage/v1/object/public/${name}/${key}`}})
  })};
  const source=readFileSync(new URL('../../supabase/functions/valtrex-cloud/index.ts',import.meta.url),'utf8').replace(/^import .*?;\s*/u,'');
- vm.runInNewContext(transformSync(source,{loader:'ts',format:'iife',target:'es2022'}).code,{createClient:()=>db,Deno:{env:{get:n=>n==='SUPABASE_SERVICE_ROLE_KEY'?'test-role':null},serve:fn=>{handle=fn;}},fetch:async(url,options)=>{networkCalls.push({url:String(url),options});return externalFetch?externalFetch(url,options):Response.json({id:managerId,bot:true});},crypto:webcrypto,TextEncoder,TextDecoder,URL,URLSearchParams,Response,Request,AbortSignal,Uint8Array,Date,Math,atob,btoa,console},{timeout:2000});
- async function call(path,{method='GET',data,auth='portal',headers={}}={}){
-  const base='https://valtrexapplications.vercel.app';const h={'content-type':'application/json',origin:base,...(auth==='portal'?{cookie:`vtx_portal=${cookie}`,'x-valtrex-csrf':csrf}:auth==='bot'?{authorization:`Bearer ${bridge}`,'x-valtrex-application':app}:auth==='manager'?{authorization:`Bot ${'token_'.repeat(10)}`} : {}),...headers};
-  const r=await handle(new Request(`${base}/${path}`,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(data||{})}));return {status:r.status,body:await r.json()};
+ vm.runInNewContext(transformSync(source,{loader:'ts',format:'iife',target:'es2022'}).code,{createClient:()=>db,Deno:{env:{get:n=>Object.hasOwn(env,n)?env[n]:n==='SUPABASE_SERVICE_ROLE_KEY'?'test-role':null},serve:fn=>{handle=fn;}},fetch:async(url,options)=>{networkCalls.push({url:String(url),options});return externalFetch?externalFetch(url,options):Response.json({id:managerId,bot:true});},crypto:webcrypto,TextEncoder,TextDecoder,URL,URLSearchParams,Response,Request,AbortSignal,Uint8Array,Date,Math,atob,btoa,console},{timeout:2000});
+ async function rawCall(path,{method='GET',data,auth='portal',headers={}}={}){
+  const h={'content-type':'application/json',origin:base,...(auth==='portal'?{cookie:`vtx_portal=${cookie}`,'x-valtrex-csrf':csrf}:auth==='bot'?{authorization:`Bearer ${bridge}`,'x-valtrex-application':app}:auth==='manager'?{authorization:`Bot ${'token_'.repeat(10)}`} : {}),...headers};
+  return handle(new Request(`${base}/${path}`,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(data||{})}));
  }
- return {tables,call,calls,networkCalls,media,storageCalls,mediaState,setFetch:fn=>{externalFetch=fn;},setManager:id=>{managerId=id;}};
+ async function call(path,options){
+  const r=await rawCall(path,options);return {status:r.status,body:await r.json()};
+ }
+ return {tables,call,rawCall,calls,networkCalls,media,storageCalls,mediaState,setFetch:fn=>{externalFetch=fn;},setManager:id=>{managerId=id;}};
 }

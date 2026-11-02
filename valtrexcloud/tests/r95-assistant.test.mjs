@@ -12,7 +12,7 @@ async function setup(){const f=await fixture();
 async function send(f,chat,extra={}){return f.call(`${root}/chats/${chat.id}/messages`,{method:'POST',data:{text:'Olá',images:[],revision:chat.revision,clientId:randomUUID(),...extra}});}
 test('private history persists real roles, configured persona and separate chats; anonymous and other owners cannot read',async()=>{
  const {f,chat}=await setup();let payload;f.setFetch(async(_url,o)=>{payload=JSON.parse(o.body);return model('{"text":"Sou Lyze.","action":null}');});
- const r=await send(f,chat);assert.equal(r.status,200);assert.equal(r.body.chat.messages.length,2);assert.match(payload.system,/Você é CLOUD AI/);assert.equal(payload.message,'Olá');assert.equal(payload.history.length,0);
+ const r=await send(f,chat);assert.equal(r.status,200);assert.equal(r.body.chat.messages.length,2);assert.match(payload.system,/As alterações exigem Sim\/Não/);assert.equal(payload.message,'Olá');assert.equal(payload.history.length,0);
  assert.equal((await f.call(`${root}/chats/${chat.id}`,{auth:'none'})).status,401);assert.equal((await f.call(`portal/apps/${other}/assistant/chats/${chat.id}`)).status,404);
  assert.equal((await f.call(root)).body.chats.length,1);assert.equal((await f.call(`${root}/chats/${randomUUID()}`)).status,404);
  const second=(await f.call(root,{method:'POST',data:{id:randomUUID()}})).body.chat;assert.equal(second.messages.length,0);

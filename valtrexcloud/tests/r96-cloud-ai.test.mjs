@@ -12,9 +12,9 @@ test('the administrator can switch the signed hosted runtime without a customer 
 async function ready(){const f=await fixture();f.tables.valtrex_site_user_access=[{user_id:user,ai_managed:true,ai_enabled:true,ai_tickets:true,ai_community:true}];f.setFetch(async()=>Response.json({text:'{"text":"Olá! Vamos conversar.","action":null}',model:'Qwen'}));return f;}
 async function chat(f){return (await f.call(root,{method:'POST',data:{id:randomUUID()}})).body.chat;}
 async function send(f,c,text){return f.call(`${root}/chats/${c.id}/messages`,{method:'POST',data:{clientId:randomUUID(),revision:c.revision,text,images:[]}});}
-test('CLOUD AI uses only the existing signed Hugging Face endpoint with no user keys and Manager controlled access',async()=>{
+test('CLOUD AI uses the selected signed Hugging Face endpoint with no user keys and Manager controlled access',async()=>{
  const f=await ready(),c=await chat(f);let request;f.setFetch(async(url,options)=>{request={url,options};return Response.json({text:'{"text":"Sou CLOUD AI.","action":null}'});});
- const r=await send(f,c,'Qual é seu nome?');assert.equal(r.status,200);assert.equal(r.body.chat.messages.at(-1).content,'Sou CLOUD AI.');assert.match(request.url,/china12n-007-ai-agent-runtime\.hf\.space\/cloud-support/);assert.ok(request.options.headers['x-cloud-permit']);assert.equal(request.options.headers.Authorization,undefined);assert.equal(f.tables.valtrex_workspace_config?.length||0,0);
+ const r=await send(f,c,'Qual é seu nome?');assert.equal(r.status,200);assert.equal(r.body.chat.messages.at(-1).content,'Sou CLOUD AI.');assert.match(request.url,/china12n-synx-cloud-ai-27b\.hf\.space\/cloud-support/);assert.ok(request.options.headers['x-cloud-permit']);assert.equal(request.options.headers.Authorization,undefined);assert.equal(f.tables.valtrex_workspace_config?.length||0,0);
  f.tables.valtrex_site_user_access[0].ai_enabled=false;const blocked=await send(f,r.body.chat,'Oi');assert.equal(blocked.status,403);assert.match(blocked.body.error,/Manager/);
 });
 test('avatar and personality persist privately, validate stale updates and never accept API settings',async()=>{

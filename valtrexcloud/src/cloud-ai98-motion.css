@@ -1,0 +1,13 @@
+.cloud98-robot{position:relative;overflow:hidden;vertical-align:middle;transform-origin:50% 70%;will-change:auto}.cloud98-robot::after{content:'';position:absolute;inset:5%;border-radius:50%;pointer-events:none;opacity:0;background:linear-gradient(110deg,transparent 30%,#bdefff55 46%,#fff9 50%,transparent 62%);transform:translateX(-45%) skewX(-8deg)}.assistant95-typing>.cloud98-robot{margin-right:7px;flex:none;animation:none!important;width:30px;height:30px;background-color:transparent}.assistant95-typing:has(.cloud98-robot){display:flex;align-items:center;gap:5px}
+@media(prefers-reduced-motion:no-preference){
+ .cloud96-fab .cloud98-robot,.cloud96-window-header .cloud98-robot,.cloud96-profile .cloud98-robot,.assistant95-empty .cloud98-robot,.cloud96-avatar-options button[aria-pressed=true] .cloud98-robot{animation:cloud98-idle 5.6s ease-in-out infinite}
+ .cloud96-fab .cloud98-robot::after,.cloud96-profile .cloud98-robot::after,.assistant95-empty .cloud98-robot::after{animation:cloud98-scan 9s ease-in-out infinite}
+ .cloud98-robot[data-robot=moon]{animation-delay:-1.4s!important}.cloud98-robot[data-robot=heart]{animation-delay:-2.8s!important}.cloud98-robot[data-robot=star]{animation-delay:-4.2s!important}
+ .assistant95-typing>.cloud98-robot[data-activity=thinking]{animation:cloud98-thinking 1.7s ease-in-out infinite!important}.cloud98-robot[data-activity=thinking]::after{animation:cloud98-scan 2s ease-in-out infinite}
+ .cloud96-avatar-options button:hover .cloud98-robot{animation:cloud98-nod .65s ease-in-out 1}
+}
+@keyframes cloud98-idle{0%,100%{transform:translateY(0) rotate(-1deg)}35%{transform:translateY(-2px) rotate(1.5deg)}68%{transform:translateY(0) rotate(.5deg)}}
+@keyframes cloud98-thinking{0%,100%{transform:rotate(-4deg);filter:brightness(1)}50%{transform:translateY(-1px) rotate(4deg);filter:brightness(1.18)}}
+@keyframes cloud98-scan{0%,78%,100%{opacity:0;transform:translateX(-45%) skewX(-8deg)}84%{opacity:.35}94%{opacity:0;transform:translateX(45%) skewX(-8deg)}}
+@keyframes cloud98-nod{0%,100%{transform:rotate(0)}40%{transform:translateY(1px) rotate(-5deg)}75%{transform:rotate(3deg)}}
+@media(prefers-reduced-motion:reduce){.cloud98-robot,.cloud98-robot::after{animation:none!important;transform:none!important;filter:none!important}}

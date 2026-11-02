@@ -1,12 +1,13 @@
 import React,{useEffect,useRef,useState,useCallback,useId} from 'react';
 import ImagePicker from './image-picker.jsx';
 import './cloud-ai96.css';
+import './cloud-ai98-motion.css';
 const options=[['cloud','Atlas · branco','0% 0%'],['moon','Nexus · grafite','100% 0%'],['heart','Orion · prata','0% 100%'],['star','Vega · âmbar','100% 100%']];
 const labels={preferred_name:'Como chamar você',answer_style:'Estilo das respostas',favorite_color:'Cores preferidas',brand_name:'Nome da sua loja',emoji_style:'Uso de emojis'};
 export const cloudDefaults96={enabled:true,avatar:'cloud',customAvatar:'',tone:'friendly',instructions:'',memoryEnabled:true};
-export function Avatar96({settings={},size=44}){
+export function Avatar96({settings={},size=44,activity='idle'}){
  const choice=options.find(v=>v[0]===settings.avatar)||options[0];
- return settings.avatar==='custom'&&settings.customAvatar?<img className="cloud96-avatar" width={size} height={size} src={settings.customAvatar} alt="Avatar da CLOUD AI" style={{width:size,height:size}}/>:<span role="img" aria-label={choice[1]} className="cloud96-avatar" style={{width:size,height:size,backgroundImage:'url(/cloud-ai/avatars96.png)',backgroundPosition:choice[2],backgroundSize:'200% 200%'}}/>;
+ return settings.avatar==='custom'&&settings.customAvatar?<img className="cloud96-avatar" width={size} height={size} src={settings.customAvatar} alt="Avatar da CLOUD AI" style={{width:size,height:size}}/>:<span role="img" aria-label={choice[1]} data-activity={activity} data-robot={choice[0]} className="cloud96-avatar cloud98-robot" style={{width:size,height:size,backgroundImage:'url(/cloud-ai/avatars96.png)',backgroundPosition:choice[2],backgroundSize:'200% 200%'}}/>;
 }
 export function CloudPreferences96({appId,request,csrf,onChange}){
  const [data,setData]=useState(null),[config,setConfig]=useState(cloudDefaults96),[memories,setMemories]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');const alive=useRef(true),lock=useRef(false);

@@ -1,5 +1,6 @@
 import ImagePicker from './image-picker.jsx';
 import Operations90 from './operations90.jsx';
+import Assistant95 from './assistant95.jsx';
 import Wallet90 from './wallet90.jsx';
 import {expiryStatus90} from './expiry90.mjs';
 import {isSensitive,confirmSensitive} from './confirm90.mjs';
@@ -20,7 +21,7 @@ import { ProductsPanel, NotificationCenter, VerificationAppearance } from './sto
 import { FinancePanel, SupportWorkspace } from './finance-chat.jsx';
 
 const apiRoot = '/api/portal';
-const nav = [['overview','Visão geral'],['wallet','Wallet'],['apps','Aplicações'],['operations','Central e estúdio'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['security','Dispositivos'],['platform','Administração'],['help','Ajuda']];
+const nav = [['overview','Visão geral'],['wallet','Wallet'],['apps','Aplicações'],['operations','Central e estúdio'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['assistant','Assistente pessoal'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['security','Dispositivos'],['platform','Administração'],['help','Ajuda']];
 function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true"><Icon name="cloud" size={24}/></span><span>{BRAND}<span className="portal-brand-light">SEU WORKSPACE</span></span></a>; }
 
 async function request(path, { method = 'GET', data, csrf } = {}) {
@@ -35,7 +36,7 @@ async function request(path, { method = 'GET', data, csrf } = {}) {
     method, credentials: 'same-origin',
     headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-valtrex-csrf': csrf || '',...(confirmation?{'x-valtrex-confirmation':confirmation}:{}) },
     body: method === 'GET' ? undefined : JSON.stringify(data || {}),
-    signal: AbortSignal.timeout(path.endsWith('/cloud-ai/test') ? 70000 : path.endsWith('/draft') ? 30000 : 12000),
+    signal: AbortSignal.timeout(path.includes('/assistant/')?120000:path.endsWith('/cloud-ai/test') ? 70000 : path.endsWith('/draft') ? 30000 : 12000),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a ação.');
@@ -239,7 +240,7 @@ export default function Dashboard() {
     <span className="portal-sidebar-label">WORKSPACE</span>
     <ApplicationPicker apps={visibleApps} selected={selectedApplication} onSelect={chooseApplication} disabled={saving} hideIds={preferences.hideIds} refreshing={refreshing} onRefresh={refreshApps}/>
     <nav aria-label="Navegação do painel">{nav.filter(([key])=>key!=='platform'||session.isPlatformAdmin).map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} className={tab === key ? 'active' : ''}
-      onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><Icon name={key==='cloud'?'shield':key}/><span>{label}</span></button>)}</nav>
+      onClick={() => { setTab(key); setFlash(''); setMenuOpen(false); }}><Icon name={key==='cloud'?'shield':key==='assistant'?'ai':key}/><span>{label}</span></button>)}</nav>
     <a className="portal-sidebar-plans" href="/plans"><Icon name="subscriptions"/>Conhecer os planos<Icon name="external" size={14}/></a>
     <div className="portal-sidebar-bottom"><div className="portal-user">{session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span>{session.user.name.slice(0, 1).toUpperCase()}</span>}
       <div><strong>{session.user.name}</strong><small>Discord conectado</small></div></div><button onClick={logout}><Icon name="logout" size={16}/>Sair da conta</button></div>
@@ -277,6 +278,7 @@ export default function Dashboard() {
           <button className="portal-primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar autenticação'}</button></form> : <Empty title="Carregando autenticação" text="Aguarde a consulta ao backend."/>}</Section>}
       {tab === 'gifts' && <Section eyebrow="GIFTS" title="Seu estúdio de links" description="Crie lotes, personalize o convite e acompanhe cada Gift.">{app?<GiftStudio key={appId} gifts={gifts} call={call} setGifts={setGifts}/>:<Empty title="Escolha uma aplicação" text="Vincule um bot para gerenciar seus Gifts."/>}</Section>}
       {tab === 'operations' && <Section eyebrow="CENTRAL" title="Seu bot, por inteiro" description="Diagnóstico, recibos, estoque, automações e configurações com histórico.">{app?<Operations90 key={appId} appId={appId} request={request} csrf={session.csrf} initialTab={operationTab}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para abrir a central."/>}</Section>}
+      {tab === 'assistant' && (app?<Assistant95 key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione uma aplicação para conversar com seu assistente."/>)}
       {tab === 'wallet' && (app?<Wallet90 key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione o bot da sua loja para consultar a wallet."/>)}
       {tab === 'finance' && <Section eyebrow="SUA OPERAÇÃO" title="Rendimentos com todos os detalhes" description="Vendas confirmadas, evolução e histórico financeiro da aplicação.">{app?<FinancePanel key={appId} appId={appId} request={request}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para consultar os rendimentos."/>}</Section>}
       {tab === 'platform' && session.isPlatformAdmin && <Section eyebrow="ADMINISTRAÇÃO DO PROJETO" title="Controle da operação" description="Bots, servidores, gateway e atendimento no próprio site."><PlatformAdmin request={request} csrf={session.csrf}/></Section>}

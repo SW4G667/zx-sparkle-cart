@@ -55,6 +55,8 @@ export async function fixture({env={},base='https://valtrexapplications.vercel.a
   list:async prefix=>({data:[...media].filter(([key])=>key.startsWith(prefix+'/')).map(([key,v])=>({name:key.slice(prefix.length+1),metadata:{size:v.bytes.length}})),error:null}),
   upload:async(key,bytes,options)=>{storageCalls.push({kind:'upload',key,options});if(!mediaState.available)return {error:{statusCode:'503'}};media.set(key,{bytes:Uint8Array.from(bytes),options});return {data:{path:key},error:null};},
   getPublicUrl:key=>({data:{publicUrl:`https://project.supabase.co/storage/v1/object/public/${name}/${key}`}})
+  ,createSignedUrl:async(key,seconds)=>({data:{signedUrl:`https://project.supabase.co/storage/v1/object/sign/${name}/${key}?token=test-${seconds}`},error:null})
+  ,remove:async keys=>{for(const key of keys)media.delete(key);return {data:keys,error:null};}
  })};
  const source=readFileSync(new URL('../../supabase/functions/valtrex-cloud/index.ts',import.meta.url),'utf8').replace(/^import .*?;\s*/u,'');
  vm.runInNewContext(transformSync(source,{loader:'ts',format:'iife',target:'es2022'}).code,{createClient:()=>db,Deno:{env:{get:n=>Object.hasOwn(env,n)?env[n]:n==='SUPABASE_SERVICE_ROLE_KEY'?'test-role':null},serve:fn=>{handle=fn;}},fetch:async(url,options)=>{networkCalls.push({url:String(url),options});return externalFetch?externalFetch(url,options):Response.json({id:managerId,bot:true});},structuredClone,crypto:webcrypto,TextEncoder,TextDecoder,URL,URLSearchParams,Response,Request,AbortSignal,Uint8Array,Date,Math,atob,btoa,console},{timeout:2000});

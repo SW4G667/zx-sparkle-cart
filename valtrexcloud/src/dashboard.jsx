@@ -1,6 +1,7 @@
 import ImagePicker from './image-picker.jsx';
 import Operations90 from './operations90.jsx';
 import Assistant95 from './assistant95.jsx';
+import CloudAIWidget96 from './cloud-ai96.jsx';
 import Wallet90 from './wallet90.jsx';
 import {expiryStatus90} from './expiry90.mjs';
 import {isSensitive,confirmSensitive} from './confirm90.mjs';
@@ -21,7 +22,7 @@ import { ProductsPanel, NotificationCenter, VerificationAppearance } from './sto
 import { FinancePanel, SupportWorkspace } from './finance-chat.jsx';
 
 const apiRoot = '/api/portal';
-const nav = [['overview','Visão geral'],['wallet','Wallet'],['apps','Aplicações'],['operations','Central e estúdio'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['assistant','Assistente pessoal'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['security','Dispositivos'],['platform','Administração'],['help','Ajuda']];
+const nav = [['overview','Visão geral'],['wallet','Wallet'],['apps','Aplicações'],['operations','Central e estúdio'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['assistant','CLOUD AI'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['security','Dispositivos'],['platform','Administração'],['help','Ajuda']];
 function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true"><Icon name="cloud" size={24}/></span><span>{BRAND}<span className="portal-brand-light">SEU WORKSPACE</span></span></a>; }
 
 async function request(path, { method = 'GET', data, csrf } = {}) {
@@ -304,6 +305,7 @@ export default function Dashboard() {
       {tab === 'help' && <Section eyebrow="CENTRAL DE AJUDA" title="O próximo passo, sem dúvidas." description="Orientações para aplicações, comunidade e conta."><HelpPanel invite={catalog.officialInvite}/></Section>}
     </main><footer className="portal-footer">Cloud <span>·</span> Conectado ao Discord <span>·</span> Dados separados por aplicação</footer></div>
   <nav className="mobile-nav" aria-label="Navegação rápida">{[['overview','Início','overview'],['apps','Apps','apps'],['products','Loja','products'],['finance','Receita','revenue']].map(([key,label,icon])=><button key={key} aria-current={tab===key?'page':undefined} onClick={()=>{setTab(key);setMenuOpen(false)}}><Icon name={icon} size={20}/><span>{label}</span></button>)}<button aria-expanded={menuOpen} aria-label="Abrir menu completo" onClick={()=>setMenuOpen(value=>!value)}><Icon name="menu" size={20}/><span>Menu</span></button></nav>
+  {app&&<CloudAIWidget96 key={'cloud-ai-'+appId} appId={appId} request={request} csrf={session.csrf} fullPage={tab==='assistant'}/>}
   {commandOpen&&<CommandMenu apps={visibleApps} navigation={nav.filter(([key])=>key!=='platform'||session.isPlatformAdmin)} selectTab={setTab} openApp={openApp} close={()=>setCommandOpen(false)}/>}
   </div>;
 }

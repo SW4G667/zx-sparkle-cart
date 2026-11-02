@@ -1,4 +1,5 @@
 export const operationDefaults={receipt:{model:'confirmed',font:'sans',text:'#fafafa',muted:'#999999',accent:'#e3e3e3',border:'#474747',background:'#111111',panel:'#242424',totalText:'#fafafa',backgroundImage:'',imageFromProduct:false,pingBuyer:true,pingSeconds:2,elements:{}},restock:{useImage:false,title:'RESTOCK! O produto {produto} acabou de receber novos itens!',content:'Campo: {campo}\nAdicionados: {adicionados}x\nEstoque total: {estoque}x',channelId:'',appearance:{accent:'#f5f5f5',text:'#ffffff',muted:'#b5b5b5',panel:'#171717',background:'#090909',position:'left',buttonStyle:2,elements:{}}},delivery:{instructions:'Confira e-mail e senha no arquivo privado. Nunca compartilhe suas credenciais.',confirmButton:true,supportThread:true,credentialExpiryHours:0,guaranteeDays:7},automations:[]};
+import {normalizeReceiptElements96} from './receipt96.mjs';
 export function normalizeOperations(value){
  const result=structuredClone(operationDefaults);
  for(const section of ['receipt','restock','delivery'])for(const [key,baseline]of Object.entries(operationDefaults[section]))if(!['elements','appearance'].includes(key)&&typeof value?.[section]?.[key]===typeof baseline)result[section][key]=value[section][key];
@@ -7,7 +8,7 @@ export function normalizeOperations(value){
  if(['left','right'].includes(a.position))target.position=a.position;
  if([1,2,3,4].includes(a.buttonStyle))target.buttonStyle=a.buttonStyle;
  for(const key of ['title','stock','added','date','footer']){const p=a.elements?.[key];if(p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&Number.isFinite(p.scale))target.elements[key]={x:Math.max(-150,Math.min(150,p.x)),y:Math.max(-100,Math.min(100,p.y)),scale:Math.max(.65,Math.min(1.4,p.scale))};}
- for(const key of ['buyer','title','items','total','footer']){const p=value?.receipt?.elements?.[key];if(p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&Number.isFinite(p.scale))result.receipt.elements[key]={x:Math.max(-150,Math.min(150,p.x)),y:Math.max(-100,Math.min(100,p.y)),scale:Math.max(.65,Math.min(1.4,p.scale))};}
+ result.receipt.elements=normalizeReceiptElements96(value?.receipt?.elements);
  if(Array.isArray(value?.automations))result.automations=value.automations.slice(0,20).filter(a=>a&&typeof a==='object').map(a=>Object.fromEntries(['id','kind','enabled','channelId','content','intervalMinutes','stockThreshold','timezone','quietStart','quietEnd','days'].filter(key=>Object.hasOwn(a,key)).map(key=>[key,key==='days'?(Array.isArray(a.days)?a.days.filter(v=>Number.isInteger(v)&&v>=0&&v<=6):[]):a[key]])));
  return result;
 }

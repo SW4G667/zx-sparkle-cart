@@ -62,9 +62,9 @@ test('heartbeat permits measured values only, strips secrets and distinguishes c
  const f=await fixture();const r=await f.call('bot/workspace/heartbeat',{method:'POST',auth:'bot',data:{runtime:'javascript',telemetry:{version:'R90',rssMb:144.5,heapMb:34,latencyMs:120,services:{discord:'connected',payments:'configured',imap:'secret'},token:'do-not-leak',lastError:{action:'payments:credential','code':'HTTP_503','stack':'private'}}}});assert.equal(r.status,200);
  const data=await f.call(`portal/apps/${app}/operations/status`);assert.equal(data.body.status.telemetry.rssMb,145);assert.equal(data.body.status.telemetry.services.payments,'configured');assert.equal(data.body.status.telemetry.services.imap,'unknown');assert.ok(!JSON.stringify(data.body).includes('do-not-leak'));assert.ok(!JSON.stringify(data.body).includes('stack'));
 });
-test('domain checks never fetch the supplied host and reject local or malformed names',async()=>{
- const f=await fixture();for(const domain of ['localhost','127.0.0.1','user:pass@evil.com','example.com/path'])assert.equal((await f.call(`portal/apps/${app}/operations/domain`,{method:'POST',data:{domain}})).status,400);
- f.setFetch(async()=>Response.json({Answer:[{type:5,data:'cname.vercel-dns.com.'}]}));const r=await f.call(`portal/apps/${app}/operations/domain`,{method:'POST',data:{domain:'loja.example.com'}});assert.equal(r.status,200);assert.ok(f.networkCalls.every(c=>c.url.startsWith('https://dns.google/resolve?')));assert.equal(r.body.https.state,'verify_in_host');
+test('the retired customer domain endpoint is unavailable and makes no DNS or host requests',async()=>{
+ const f=await fixture();for(const domain of ['localhost','127.0.0.1','loja.example.com'])assert.equal((await f.call(`portal/apps/${app}/operations/domain`,{method:'POST',data:{domain}})).status,404);
+ assert.equal(f.networkCalls.length,0);
 });
 test('sessions expose public identifiers only and another user session cannot be revoked',async()=>{
  const f=await fixture();Object.assign(f.tables.valtrex_portal_sessions[0],{public_id:randomUUID(),created_at:new Date().toISOString(),device:'Android'});const foreign=randomUUID();f.tables.valtrex_portal_sessions.push({session_hash:'foreign',discord_user_id:'99999999999999999',public_id:foreign,expires_at:'2099-01-01'});
@@ -72,7 +72,7 @@ test('sessions expose public identifiers only and another user session cannot be
  const payload=await challenge(f,'sessions_revoke','self',{id:foreign});assert.equal((await f.call('portal/security/sessions/revoke',{method:'POST',data:payload})).status,404);assert.ok(f.tables.valtrex_portal_sessions.some(s=>s.public_id===foreign));
 });
 test('imported configuration drops unknown credentials and cannot crash on a malformed automation collection',()=>{
- const value=normalizeOperations({secret:'must-drop',receipt:{model:'image',key:'must-drop',elements:{title:{x:5000,y:-5000,scale:99}}},automations:{invalid:true}});assert.equal(value.receipt.model,'image');assert.equal(value.receipt.elements.title.x,150);assert.equal(value.receipt.elements.title.y,-100);assert.equal(value.receipt.elements.title.scale,1.4);assert.ok(!JSON.stringify(value).includes('must-drop'));assert.deepEqual(value.automations,[]);
+ const value=normalizeOperations({secret:'must-drop',receipt:{model:'image',key:'must-drop',elements:{title:{x:5000,y:-5000,scale:99}}},automations:{invalid:true}});assert.equal(value.receipt.model,'image');assert.equal(value.receipt.elements.title.x,720);assert.equal(value.receipt.elements.title.y,-1200);assert.equal(value.receipt.elements.title.scale,3);assert.ok(!JSON.stringify(value).includes('must-drop'));assert.deepEqual(value.automations,[]);
 });
 test('sensitive gateway and OAuth changes require a fresh confirmation tied to their exact payload',async()=>{
  const f=await fixture();f.tables.valtrex_manager_web=[{id:1,administrator_ids:[user],site_owner_ids:[user]}];const data={kind:'gateway_save',payload:{gateway:'goatpay',enabled:false},clientId:randomUUID()};

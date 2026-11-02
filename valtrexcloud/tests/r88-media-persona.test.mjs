@@ -36,4 +36,9 @@ test('hosted request includes general persona, scope persona and knowledge witho
  let payload;f.setFetch(async(_url,options)=>{payload=JSON.parse(options.body);return Response.json({text:'Oi! Eu sou a Luna.',model:'Qwen'});});
  const response=await f.call('bot/workspace/cloud-ai/generate',{auth:'bot',method:'POST',data:{purpose:'community',channelId:channel,guildId:guild,message:'Qual é seu nome?',history:[]}});
  assert.equal(response.status,200);assert.ok(payload.system.includes(persona));assert.ok(payload.system.includes('tom divertido'));assert.ok(payload.system.includes('A loja abre às 10h.'));assert.ok(payload.system.length<=6000);assert.ok(!payload.system.includes('Nunca se descreva'));
+ const local='Você é Lyze, uma personagem feminina e brincalhona.';
+ const history=[{role:'user',content:'Eu sou Leo'},{role:'assistant',content:'Oi, Leo!'}];
+ const changed=await f.call('bot/workspace/cloud-ai/generate',{auth:'bot',method:'POST',data:{purpose:'community',channelId:channel,guildId:guild,message:'Como me chamo?',history,instructions:local}});
+ assert.equal(changed.status,200);assert.ok(payload.system.includes(local));assert.deepEqual(payload.history,history);assert.ok(payload.system.includes('Não escreva pelo usuário'));assert.ok(payload.system.length<=6000);
+ const invalid=await f.call('bot/workspace/cloud-ai/generate',{auth:'bot',method:'POST',data:{purpose:'community',channelId:channel,guildId:guild,message:'Oi',history:[],instructions:'x'.repeat(4001)}});assert.equal(invalid.status,400);
 });

@@ -14,6 +14,7 @@ import GiftStudio from './gift-studio.jsx';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Icon from './icons.jsx';
 import { BRAND, displayName } from './branding.mjs';
+import SynxMark97 from './synx97.jsx';
 import { readPreferences, normalizePreferences, PUBLIC_PRESETS, filterApps, safeInvite, formatDate } from './preferences.mjs';
 import { LoginVisual, AppToolbar, PreferencesPanel, ActivityPanel, SetupChecklist, HelpPanel, ApplicationGrid, GiftList, CommandMenu } from './workspace-tools.jsx';
 
@@ -23,7 +24,7 @@ import { FinancePanel, SupportWorkspace } from './finance-chat.jsx';
 
 const apiRoot = '/api/portal';
 const nav = [['overview','Visão geral'],['wallet','Wallet'],['apps','Aplicações'],['operations','Central e estúdio'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['assistant','CLOUD AI'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['security','Dispositivos'],['platform','Administração'],['help','Ajuda']];
-function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true"><Icon name="cloud" size={24}/></span><span>{BRAND}<span className="portal-brand-light">SEU WORKSPACE</span></span></a>; }
+function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true"><SynxMark97/></span><span>{BRAND}<span className="portal-brand-light">SEU WORKSPACE</span></span></a>; }
 
 async function request(path, { method = 'GET', data, csrf } = {}) {
   try {
@@ -69,7 +70,7 @@ function Login({ theme = 'dark' }) {
       <a href={valid ? `/api/auth/portal/${appId}` : undefined} aria-disabled={!valid} onClick={event => { if (!valid) event.preventDefault(); }}>Entrar</a></div>
     </details></div></div>
     <LoginVisual/>
-  </div><p className="portal-powered">Cloud · OAuth2 oficial do Discord</p></main>;
+  </div><p className="portal-powered">{BRAND} · OAuth2 oficial do Discord</p></main>;
 }
 
 function Empty({ title, text }) { return <div className="portal-empty"><div className="portal-empty-symbol"><Icon name="apps" size={26}/></div><h3>{title}</h3><p>{text}</p></div>; }
@@ -287,7 +288,7 @@ export default function Dashboard() {
       {tab === 'tickets' && <Section eyebrow="TICKETS DE CLIENTES" title="Sua operação de atendimento" description="Acompanhe o Discord e responda pelo site com a identidade da sua loja.">{app?<TicketInbox key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot para consultar os tickets da loja."/>}</Section>}
       {tab === 'ticket-settings' && <Section eyebrow="PREFERÊNCIAS DE ATENDIMENTO" title="Do seu jeito, em cada resposta" description="Escolha bot ou webhook, personalize a apresentação e organize respostas rápidas.">{app?<TicketSettings key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot para configurar o atendimento."/>}</Section>}
       {tab === 'chat' && <Section eyebrow="ATENDIMENTO" title="Sua equipe, por perto" description="Veja seus tickets, confira as respostas e abra a conversa com a equipe.">{app?<SupportWorkspace key={appId} appId={appId} request={request} csrf={session.csrf} applicationName={app.label}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para iniciar uma conversa."/>}</Section>}
-      {tab === 'products' && <Section eyebrow="SUA LOJA" title="Sua loja conectada ao bot" description="Gerencie produtos no Sallers ou tarifas, estoque e visuais no Buxx. As mudanças precisam ser confirmadas pelo bot.">{app?<ProductsPanel key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot com Cloud vinculado para gerenciar produtos."/>}</Section>}
+      {tab === 'products' && <Section eyebrow="SUA LOJA" title="Sua loja conectada ao bot" description="Gerencie produtos no SynxPro ou tarifas, estoque e visuais no SynxBux. As mudanças precisam ser confirmadas pelo bot.">{app?<ProductsPanel key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot com Cloud vinculado para gerenciar produtos."/>}</Section>}
       {tab === 'appearance' && <Section eyebrow="APARÊNCIA" title="Sua página, sua identidade" description="As cores e textos são isolados por aplicação. A prévia não consome Gift.">
         {config?.theme ? <form className="portal-form" onSubmit={event => { event.preventDefault(); saveConfig({ theme: config.theme }); }}><div className="cloud-appearance-tools"><div><h3>Comece por uma paleta</h3><p>Aplique, ajuste e salve quando estiver satisfeito.</p></div><div className="cloud-swatches">{Object.entries(PUBLIC_PRESETS).map(([key, colors]) => <button key={key} type="button" onClick={() => setConfig({ ...config, theme: { ...config.theme, ...colors } })}><Icon name={key==='light'?'sun':'moon'} size={16}/>{({ dark:'Escuro',light:'Claro',contrast:'Alto contraste',red:'Vermelho',blue:'Azul',purple:'Violeta',green:'Esmeralda' })[key]}</button>)}</div></div><label className="cloud-radius">Arredondamento dos cards <input type="range" min="4" max="32" value={config.theme.radius ?? 22} onChange={e => setConfig({ ...config, theme: { ...config.theme, radius: Number(e.target.value) } })}/><span>{config.theme.radius ?? 22}px</span></label><div className="portal-fields">
           {['name', 'title', 'description', 'loadingTitle', 'loadingDescription', 'button', 'footer'].map(key => <Field key={key} label={{ name: 'Nome da loja', title: 'Título', description: 'Descrição', logo: 'Logo HTTPS', banner: 'Banner HTTPS', backgroundImage: 'Fundo da página HTTPS', loadingTitle: 'Título do carregamento', loadingDescription: 'Descrição do carregamento', loadingBackgroundImage: 'Fundo do carregamento HTTPS', button: 'Texto do botão', footer: 'Rodapé' }[key]}
@@ -303,7 +304,7 @@ export default function Dashboard() {
       {tab === 'preferences' && <Section eyebrow="SEU WORKSPACE" title="Um painel com a sua cara" description="Cores, organização e conforto visual, salvos neste navegador."><PreferencesPanel value={preferences} update={updatePreferences}/></Section>}
       {tab === 'security' && <Section eyebrow="SUA CONTA" title="Dispositivos conectados" description="Revise e desconecte sessões da sua conta, mesmo sem uma aplicação vinculada."><Operations90 key="account-security" appId="" request={request} csrf={session.csrf} initialTab="security"/></Section>}
       {tab === 'help' && <Section eyebrow="CENTRAL DE AJUDA" title="O próximo passo, sem dúvidas." description="Orientações para aplicações, comunidade e conta."><HelpPanel invite={catalog.officialInvite}/></Section>}
-    </main><footer className="portal-footer">Cloud <span>·</span> Conectado ao Discord <span>·</span> Dados separados por aplicação</footer></div>
+    </main><footer className="portal-footer">{BRAND} <span>·</span> Conectado ao Discord <span>·</span> Dados separados por aplicação</footer></div>
   <nav className="mobile-nav" aria-label="Navegação rápida">{[['overview','Início','overview'],['apps','Apps','apps'],['products','Loja','products'],['finance','Receita','revenue']].map(([key,label,icon])=><button key={key} aria-current={tab===key?'page':undefined} onClick={()=>{setTab(key);setMenuOpen(false)}}><Icon name={icon} size={20}/><span>{label}</span></button>)}<button aria-expanded={menuOpen} aria-label="Abrir menu completo" onClick={()=>setMenuOpen(value=>!value)}><Icon name="menu" size={20}/><span>Menu</span></button></nav>
   {app&&<CloudAIWidget96 key={'cloud-ai-'+appId} appId={appId} request={request} csrf={session.csrf} fullPage={tab==='assistant'}/>}
   {commandOpen&&<CommandMenu apps={visibleApps} navigation={nav.filter(([key])=>key!=='platform'||session.isPlatformAdmin)} selectTab={setTab} openApp={openApp} close={()=>setCommandOpen(false)}/>}

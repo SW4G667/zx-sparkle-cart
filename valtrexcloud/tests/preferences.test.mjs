@@ -27,8 +27,8 @@ test('support links accept only HTTPS Discord invites',()=>{
  for(const value of ['javascript:alert(1)','https://discord.gg.evil.test/cloud','https://discord.gg:8443/cloud','https://user@discord.gg/cloud'])assert.equal(safeInvite(value),null);
  assert.equal(safeInvite('https://discord.gg/cloud'),'https://discord.gg/cloud');
 });
-test('legacy public branding becomes Cloud without altering custom names',()=>{
- assert.equal(displayName('ValtrexCloud'),'Cloud');assert.equal(displayName('ValtrexApplications'),'Cloud');assert.equal(displayName('Minha Loja'),'Minha Loja');
+test('legacy public branding becomes Synx without altering custom names',()=>{
+ assert.equal(displayName('ValtrexCloud'),'Synx Applications');assert.equal(displayName('ValtrexApplications'),'Synx Applications');assert.equal(displayName('Sallers'),'SynxPro');assert.equal(displayName('Buxx'),'SynxBux');assert.equal(displayName('Minha Loja'),'Minha Loja');
 });
 
 test('favorites are bounded and legacy preferences migrate without retaining arbitrary data',()=>{

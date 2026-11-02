@@ -1,5 +1,5 @@
 import { displayName } from './branding.mjs';
-export const applicationTypes = { sales: 'Sallers · Vendas', robux: 'Buxx · Robux', other: 'Aplicação' };
+export const applicationTypes = { sales: 'SynxPro · Vendas', robux: 'SynxBux · Robux', other: 'Aplicação' };
 export const applicationStatuses = { active: 'Plano ativo', suspended: 'Suspensa', expired: 'Plano vencido', unknown: 'Sem prazo informado' };
 export function ownedApps(session) {
   const cloud = session?.apps || [], managed = session?.managedApps || [], matched = new Set(), seen = new Set(), result = [];

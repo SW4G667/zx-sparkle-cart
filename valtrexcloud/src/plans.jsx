@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Icon from './icons.jsx';
 import { BRAND, displayName } from './branding.mjs';
+import SynxMark97 from './synx97.jsx';
 import { safeInvite } from './preferences.mjs';
 
 const FEATURES = {
@@ -8,8 +9,8 @@ const FEATURES = {
   robux: ['Catálogo de produtos Robux', 'Cálculo e checkout', 'Pedidos e histórico', 'Fluxos de entrega configuráveis', 'Cloud e Gifts', 'Gerenciamento pelo Discord'],
 };
 const FALLBACK = [
-  { profile: 'sales', name: 'Bot de Vendas', description: 'Vendas, atendimento e automações para sua loja no Discord.', options: [] },
-  { profile: 'robux', name: 'Bot de Robux', description: 'Uma operação dedicada aos seus pedidos e produtos de Robux.', options: [] },
+  { profile: 'sales', name: 'SynxPro', description: 'Vendas, atendimento e automações para sua loja no Discord.', options: [] },
+  { profile: 'robux', name: 'SynxBux', description: 'Uma operação dedicada aos seus pedidos e produtos de Robux.', options: [] },
 ];
 const money = amount => Number(amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -24,7 +25,7 @@ export default function Plans() {
     return () => controller.abort();
   }, []);
   return <div className="plans-page">
-    <header className="plans-header"><a className="plans-brand" href="/"><span><Icon name="cloud" size={24}/></span><strong>{BRAND}</strong></a>
+    <header className="plans-header"><a className="plans-brand" href="/"><span><SynxMark97/></span><strong>{BRAND}</strong></a>
       <nav aria-label="Navegação principal"><a href="/">Início</a><a href="/plans" aria-current="page">Planos</a><a href="/dashboard">Meu painel</a></nav></header>
     <main className="plans-main">
       <div className="plans-intro"><span className="plans-kicker">APLICAÇÕES PARA DISCORD</span><h1>Escolha o bot certo<br/><em>para a sua operação.</em></h1>

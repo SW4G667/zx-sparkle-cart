@@ -1,4 +1,9 @@
 import ImagePicker from './image-picker.jsx';
+import Operations90 from './operations90.jsx';
+import Wallet90 from './wallet90.jsx';
+import {expiryStatus90} from './expiry90.mjs';
+import {isSensitive,confirmSensitive} from './confirm90.mjs';
+import {payloadDigest} from './operations90.mjs';
 import ApplicationPicker from './application-picker.jsx';
 import {ownedApps,resolveApplication} from './application-model.mjs';
 import PlatformAdmin from './platform-admin.jsx';
@@ -15,19 +20,31 @@ import { ProductsPanel, NotificationCenter, VerificationAppearance } from './sto
 import { FinancePanel, SupportWorkspace } from './finance-chat.jsx';
 
 const apiRoot = '/api/portal';
-const nav = [['overview','Visão geral'],['apps','Aplicações'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['platform','Administração'],['help','Ajuda']];
+const nav = [['overview','Visão geral'],['wallet','Wallet'],['apps','Aplicações'],['operations','Central e estúdio'],['products','Produtos'],['finance','Rendimentos'],['tickets','Tickets de clientes'],['ticket-settings','Preferências de atendimento'],['ai','Inteligência artificial'],['chat','Suporte da plataforma'],['verification','Verificação'],['cloud','Autenticação'],['gifts','Gifts'],['appearance','Aparência pública'],['subscriptions','Planos'],['logs','Atividade'],['preferences','Preferências'],['security','Dispositivos'],['platform','Administração'],['help','Ajuda']];
 function Brand() { return <a href="/" className="portal-brand"><span className="portal-brand-icon" aria-hidden="true"><Icon name="cloud" size={24}/></span><span>{BRAND}<span className="portal-brand-light">SEU WORKSPACE</span></span></a>; }
 
 async function request(path, { method = 'GET', data, csrf } = {}) {
+  try {
+  let confirmation='';
+  if(isSensitive(path,method,data)){
+    if(!await confirmSensitive())throw Error('Alteração cancelada.');
+    const challenge=await fetch(`${apiRoot}/security/challenge`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-valtrex-csrf':csrf||''},body:JSON.stringify({action:'sensitive_change',scope:'self',digest:await payloadDigest({route:path,method,data})}),signal:AbortSignal.timeout(12000)});
+    const prepared=await challenge.json();if(!challenge.ok||!prepared.id)throw Error('Não foi possível preparar a confirmação. Tente novamente.');confirmation=prepared.id;
+  }
   const response = await fetch(`${apiRoot}${path}`, {
     method, credentials: 'same-origin',
-    headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-valtrex-csrf': csrf || '' },
+    headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-valtrex-csrf': csrf || '',...(confirmation?{'x-valtrex-confirmation':confirmation}:{}) },
     body: method === 'GET' ? undefined : JSON.stringify(data || {}),
     signal: AbortSignal.timeout(path.endsWith('/cloud-ai/test') ? 70000 : path.endsWith('/draft') ? 30000 : 12000),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a ação.');
   return result;
+  } catch(error) {
+    if(error.name==='TimeoutError'||error.name==='AbortError')throw Error('A resposta está demorando. Consulte o estado antes de repetir uma compra, importação ou alteração.');
+    if(error instanceof TypeError)throw Error('A conexão foi interrompida. Confira sua internet e consulte o estado da solicitação.');
+    throw error;
+  }
 }
 
 function DiscordMark() {
@@ -77,6 +94,7 @@ export default function Dashboard() {
   const loadSession=useCallback(async()=>{const sequence=++sessionSequence.current;const data=await request('/me');if(sequence===sessionSequence.current)setSession(data);return data;},[]);
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
+  const [operationTab,setOperationTab]=useState('health');
   const [tab, setTab] = useState(() => nav.some(item => item[0] === window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'overview');
   const [preferences, setPreferences] = useState(() => { try { return readPreferences(window.localStorage); } catch { return normalizePreferences(); } });
   const [query, setQuery] = useState('');
@@ -229,11 +247,13 @@ export default function Dashboard() {
       <div className="portal-header-trail">Painel <span>/</span> {nav.find(item => item[0] === tab)?.[1]}</div><div className="portal-header-right"><button className="command-trigger" onClick={() => setCommandOpen(true)}><Icon name="search" size={16}/><span>Buscar no workspace</span><kbd>Ctrl K</kbd></button><NotificationCenter request={request} csrf={session.csrf} planApps={expiringApps} openPlan={item => {setManagedDetail(item.id);setTab('subscriptions');}}/>{session.user.avatar ? <img src={session.user.avatar} alt=""/> : <span className="portal-header-initial">{session.user.name.slice(0,1)}</span>}</div></header>
     <main className="portal-content"><div className="portal-heading"><div><span className="portal-overline">SEU WORKSPACE</span><h1>{tab === 'overview' ? `Olá, ${session.user.name.split(' ')[0]}.` : nav.find(item => item[0] === tab)?.[1]}</h1>
       <p>{tab === 'overview' ? 'Gerencie suas aplicações vinculadas ao Discord.' : app ? `${displayName(app.label)}${preferences.hideIds ? '' : ` · ${app.id}`}` : 'Nenhuma aplicação vinculada.'}</p></div><button className="portal-outline heading-refresh" disabled={refreshing} onClick={refreshApps}><Icon name="refresh" className={refreshing?'spinning':''}/><span>{refreshing?'Atualizando…':'Atualizar dados'}</span></button></div>
+      {selectedApplication&&<div className="portal-expiry-notice" data-expiry-state={expiryStatus90(selectedApplication.expiresAt).state} role="status"><Icon name="clock" size={20}/><div><strong>{selectedApplication.label} · {expiryStatus90(selectedApplication.expiresAt).label}</strong><p>{selectedApplication.expiresAt?`Vencimento: ${formatDate(selectedApplication.expiresAt,preferences.timezone)}`:'Aguardando o Manager informar o prazo deste bot.'}</p></div><button onClick={()=>setTab('subscriptions')}>Renovar ou ver plano<Icon name="arrow" size={15}/></button></div>}
       {error && <div className="portal-alert error" role="alert">{error}<button className="cloud-error-retry" onClick={() => { setError(''); setDetailRefresh(value => value + 1); }}>Tentar novamente</button><button onClick={() => setError('')} aria-label="Fechar aviso"><Icon name="close" size={16}/></button></div>}
       {flash && <div className="portal-alert" role="status">{flash}<button onClick={() => setFlash('')} aria-label="Fechar aviso"><Icon name="close" size={16}/></button></div>}
+      {session.security?.newDevice&&<div className="portal-alert" role="status">Você entrou por um tipo de dispositivo diferente das outras sessões ativas. Confira os dispositivos conectados.<button onClick={()=>setTab('security')}>Ver dispositivos</button></div>}
       {tab === 'overview' && preferences.expiryNotice && expiringApps.length > 0 && <div className="portal-expiry-notice" role="status"><Icon name="clock" size={20}/><div><strong>Confira seus planos</strong><p>{expiringApps.map(item => `${item.label}: ${expiryLabel(item.expiresAt)}`).join(' · ')}</p></div><button onClick={() => setTab('subscriptions')}>Ver planos<Icon name="arrow" size={15}/></button></div>}
       {tab === 'overview' && <><div className="cloud-overview-label"><span>WORKSPACE PESSOAL</span><span>APLICAÇÕES E COMUNIDADE</span></div><div className="portal-stats"><button onClick={() => setTab('apps')}><span className="portal-stat-icon"><Icon name="apps" size={23}/></span><span className="portal-stat-copy"><span>Aplicações vinculadas</span><strong>{count}</strong><small>Na sua conta Discord</small></span><span className="portal-stat-arrow"><Icon name="right" size={18}/></span></button><button onClick={() => setTab('logs')}><span className="portal-stat-icon"><Icon name="shield" size={22}/></span><span className="portal-stat-copy"><span>Verificações</span><strong>{config?.verified ?? '—'}</strong><small>{app ? `Em ${app.label}` : 'Selecione uma aplicação'}</small></span><span className="portal-stat-arrow"><Icon name="right" size={18}/></span></button><button onClick={() => setTab('cloud')}><span className="portal-stat-icon"><Icon name="shield" size={22}/></span><span className="portal-stat-copy"><span>Status do Cloud</span><strong className="portal-stat-status">{config ? config.secretConfigured ? 'Configurado' : 'Pendente' : '—'}</strong><small>{config?.secretConfigured ? 'OAuth2 cadastrado' : 'Confira a autenticação'}</small></span><span className="portal-stat-arrow"><Icon name="right" size={18}/></span></button></div>
-        {app&&<section className="overview-finance"><div className="finance-section-head"><div><span className="portal-overline">SUA LOJA</span><h2>Rendimentos em um olhar</h2></div></div><FinancePanel key={appId} appId={appId} request={request} compact open={()=>setTab('finance')}/></section>}{app && <SetupChecklist config={config} open={setTab}/>}<div className="cloud-quick-actions">{[['products','Produtos','Crie e edite seu catálogo','products'],['verification','Verificação','Conecte sua comunidade','shield'],['gifts','Gifts','Crie links de recuperação','gifts'],['appearance','Aparência','Dê a sua identidade','appearance']].map(([key,label,description,icon])=><button key={key} onClick={()=>setTab(key)}><span className="quick-icon"><Icon name={icon} size={20}/></span><span><strong>{label}</strong><small>{description}</small></span><Icon name="arrow" size={17}/></button>)}</div><Section eyebrow="SUAS APLICAÇÕES" title="Suas aplicações" description="Todas as aplicações vinculadas à sua conta Discord." action={<button className="portal-outline" onClick={()=>setTab('apps')}><Icon name="apps" size={16}/>Ver todas<Icon name="arrow" size={15}/></button>}>
+        {app&&<Wallet90 key={appId} appId={appId} request={request} csrf={session.csrf} compact open={()=>setTab('wallet')}/>}{app&&<section className="overview-finance"><div className="finance-section-head"><div><span className="portal-overline">SUA LOJA</span><h2>Rendimentos em um olhar</h2></div></div><FinancePanel key={appId} appId={appId} request={request} compact open={()=>setTab('finance')}/></section>}{app && <SetupChecklist config={config} open={setTab}/>}<div className="cloud-quick-actions">{[['products','Produtos','Crie e edite seu catálogo','products'],['verification','Verificação','Conecte sua comunidade','shield'],['gifts','Gifts','Crie links de recuperação','gifts'],['appearance','Aparência','Dê a sua identidade','appearance']].map(([key,label,description,icon])=><button key={key} onClick={()=>setTab(key)}><span className="quick-icon"><Icon name={icon} size={20}/></span><span><strong>{label}</strong><small>{description}</small></span><Icon name="arrow" size={17}/></button>)}</div><Section eyebrow="SUAS APLICAÇÕES" title="Suas aplicações" description="Todas as aplicações vinculadas à sua conta Discord." action={<button className="portal-outline" onClick={()=>setTab('apps')}><Icon name="apps" size={16}/>Ver todas<Icon name="arrow" size={15}/></button>}>
           {count ? <ApplicationGrid apps={filterApps(visibleApps,'','all',preferences.sort)} open={openApp} preferences={preferences} toggleFavorite={toggleFavorite} profileLabels={appProfile} statusLabels={appStatus} limit={4}/> : <Empty title="Nenhuma aplicação vinculada" text="Abra /painel → Cloud no seu bot e vincule sua conta Discord como proprietária. Depois atualize a lista."/>}</Section></>}
       {tab === 'apps' && <Section eyebrow="APLICAÇÕES" title="Seus bots" description="Dados do Cloud compartilhado, vinculados à identidade autorizada no Discord.">
         <AppToolbar query={query} setQuery={setQuery} status={statusFilter} setStatus={setStatusFilter} preferences={preferences} update={updatePreferences} favoritesOnly={favoritesOnly} setFavoritesOnly={setFavoritesOnly}/><p className="cloud-result-count">{matchingApps.length} de {count} aplicação(ões)</p>{matchingApps.length ? <><ApplicationGrid apps={matchingApps} open={openApp} preferences={preferences} toggleFavorite={toggleFavorite} profileLabels={appProfile} statusLabels={appStatus}/>
@@ -256,6 +276,8 @@ export default function Dashboard() {
               value={config[key] || ''} onChange={value => setConfig({ ...config, [key]: value })} inputMode="numeric" />)}</div>
           <button className="portal-primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar autenticação'}</button></form> : <Empty title="Carregando autenticação" text="Aguarde a consulta ao backend."/>}</Section>}
       {tab === 'gifts' && <Section eyebrow="GIFTS" title="Seu estúdio de links" description="Crie lotes, personalize o convite e acompanhe cada Gift.">{app?<GiftStudio key={appId} gifts={gifts} call={call} setGifts={setGifts}/>:<Empty title="Escolha uma aplicação" text="Vincule um bot para gerenciar seus Gifts."/>}</Section>}
+      {tab === 'operations' && <Section eyebrow="CENTRAL" title="Seu bot, por inteiro" description="Diagnóstico, recibos, estoque, automações e configurações com histórico.">{app?<Operations90 key={appId} appId={appId} request={request} csrf={session.csrf} initialTab={operationTab}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para abrir a central."/>}</Section>}
+      {tab === 'wallet' && (app?<Wallet90 key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione o bot da sua loja para consultar a wallet."/>)}
       {tab === 'finance' && <Section eyebrow="SUA OPERAÇÃO" title="Rendimentos com todos os detalhes" description="Vendas confirmadas, evolução e histórico financeiro da aplicação.">{app?<FinancePanel key={appId} appId={appId} request={request}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para consultar os rendimentos."/>}</Section>}
       {tab === 'platform' && session.isPlatformAdmin && <Section eyebrow="ADMINISTRAÇÃO DO PROJETO" title="Controle da operação" description="Bots, servidores, gateway e atendimento no próprio site."><PlatformAdmin request={request} csrf={session.csrf}/></Section>}
       {tab === 'ai' && <Section eyebrow="INTELIGÊNCIA ARTIFICIAL" title="Conhecimento que atende" description="Conecte sua API, personalize a voz da loja e prepare respostas com a equipe.">{app?<AISettings key={appId} appId={appId} request={request} csrf={session.csrf}/>:<Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para configurar a IA."/>}</Section>}
@@ -276,6 +298,7 @@ export default function Dashboard() {
         {app ? <ActivityPanel key={appId} logs={logs} timezone={preferences.timezone} onError={setError} refresh={async () => { const result = await call('/logs'); setLogs(result.logs || []); }}/>
           : <Empty title="Escolha uma aplicação" text="Selecione um bot vinculado para consultar sua atividade."/>}</Section>}
       {tab === 'preferences' && <Section eyebrow="SEU WORKSPACE" title="Um painel com a sua cara" description="Cores, organização e conforto visual, salvos neste navegador."><PreferencesPanel value={preferences} update={updatePreferences}/></Section>}
+      {tab === 'security' && <Section eyebrow="SUA CONTA" title="Dispositivos conectados" description="Revise e desconecte sessões da sua conta, mesmo sem uma aplicação vinculada."><Operations90 key="account-security" appId="" request={request} csrf={session.csrf} initialTab="security"/></Section>}
       {tab === 'help' && <Section eyebrow="CENTRAL DE AJUDA" title="O próximo passo, sem dúvidas." description="Orientações para aplicações, comunidade e conta."><HelpPanel invite={catalog.officialInvite}/></Section>}
     </main><footer className="portal-footer">Cloud <span>·</span> Conectado ao Discord <span>·</span> Dados separados por aplicação</footer></div>
   <nav className="mobile-nav" aria-label="Navegação rápida">{[['overview','Início','overview'],['apps','Apps','apps'],['products','Loja','products'],['finance','Receita','revenue']].map(([key,label,icon])=><button key={key} aria-current={tab===key?'page':undefined} onClick={()=>{setTab(key);setMenuOpen(false)}}><Icon name={icon} size={20}/><span>{label}</span></button>)}<button aria-expanded={menuOpen} aria-label="Abrir menu completo" onClick={()=>setMenuOpen(value=>!value)}><Icon name="menu" size={20}/><span>Menu</span></button></nav>

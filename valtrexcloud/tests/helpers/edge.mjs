@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {createHash,webcrypto} from 'node:crypto';
 import vm from 'node:vm';
 import {transformSync} from 'esbuild';
+import {payloadDigest} from '../../src/operations90.mjs';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 export const app='1500042139491635200',other='2500042139491635200',user='12345678901234567',second='22345678901234567',manager='1506929376967790752';
 const bridge='bridge_0123456789012345678901234567890',cookie='c'.repeat(90),csrf='csrf-fixture';
@@ -32,6 +33,23 @@ export async function fixture({env={},base='https://valtrexapplications.vercel.a
    return {data:structuredClone(matching.slice(offset,offset+limit).map(r=>columns&&columns!=='*'?Object.fromEntries(columns.split(',').filter(k=>Object.hasOwn(r,k)).map(k=>[k,r[k]])):r)),count:matching.length,error:null};
   }return q;
  }};
+ const baseRPC=db.rpc;
+ db.rpc=async(name,args)=>{
+  if(name==='valtrex_save_operation_config'){
+   const rows=tables.valtrex_operation_config||= [],history=tables.valtrex_operation_history||= [];
+   let current=rows.find(r=>r.tenant_id===args.p_tenant);
+   if((current?.revision||null)!==(args.p_base||null))return {data:{conflict:true},error:null};
+   const revision=webcrypto.randomUUID(),values={tenant_id:args.p_tenant,revision,config:structuredClone(args.p_config),actor_id:args.p_actor,updated_at:new Date().toISOString()};
+   if(current)Object.assign(current,values);else rows.push(values);
+   history.push({id:webcrypto.randomUUID(),tenant_id:args.p_tenant,revision,config:structuredClone(args.p_config),actor_id:args.p_actor,created_at:new Date().toISOString()});
+   return {data:{revision},error:null};
+  }
+  if(name==='valtrex_claim_operation_commands'){
+   const jobs=(tables.valtrex_operation_commands||[]).filter(r=>r.tenant_id===args.p_tenant&&r.state==='pending').slice(0,3);
+   for(const r of jobs)Object.assign(r,{state:'processing',lease:webcrypto.randomUUID()});return {data:structuredClone(jobs),error:null};
+  }
+  return baseRPC(name,args);
+ };
  const media=new Map(),storageCalls=[];let bucket=null;const mediaState={available:true};
  db.storage={getBucket:async()=>({data:bucket,error:bucket?null:{statusCode:'404'}}),createBucket:async(name,options)=>{storageCalls.push({kind:'bucket',name,options});if(!mediaState.available)return {error:{statusCode:'503'}};bucket={id:name,...options};return {data:bucket,error:null};},from:name=>({
   list:async prefix=>({data:[...media].filter(([key])=>key.startsWith(prefix+'/')).map(([key,v])=>({name:key.slice(prefix.length+1),metadata:{size:v.bytes.length}})),error:null}),
@@ -39,12 +57,18 @@ export async function fixture({env={},base='https://valtrexapplications.vercel.a
   getPublicUrl:key=>({data:{publicUrl:`https://project.supabase.co/storage/v1/object/public/${name}/${key}`}})
  })};
  const source=readFileSync(new URL('../../supabase/functions/valtrex-cloud/index.ts',import.meta.url),'utf8').replace(/^import .*?;\s*/u,'');
- vm.runInNewContext(transformSync(source,{loader:'ts',format:'iife',target:'es2022'}).code,{createClient:()=>db,Deno:{env:{get:n=>Object.hasOwn(env,n)?env[n]:n==='SUPABASE_SERVICE_ROLE_KEY'?'test-role':null},serve:fn=>{handle=fn;}},fetch:async(url,options)=>{networkCalls.push({url:String(url),options});return externalFetch?externalFetch(url,options):Response.json({id:managerId,bot:true});},crypto:webcrypto,TextEncoder,TextDecoder,URL,URLSearchParams,Response,Request,AbortSignal,Uint8Array,Date,Math,atob,btoa,console},{timeout:2000});
+ vm.runInNewContext(transformSync(source,{loader:'ts',format:'iife',target:'es2022'}).code,{createClient:()=>db,Deno:{env:{get:n=>Object.hasOwn(env,n)?env[n]:n==='SUPABASE_SERVICE_ROLE_KEY'?'test-role':null},serve:fn=>{handle=fn;}},fetch:async(url,options)=>{networkCalls.push({url:String(url),options});return externalFetch?externalFetch(url,options):Response.json({id:managerId,bot:true});},structuredClone,crypto:webcrypto,TextEncoder,TextDecoder,URL,URLSearchParams,Response,Request,AbortSignal,Uint8Array,Date,Math,atob,btoa,console},{timeout:2000});
  async function rawCall(path,{method='GET',data,auth='portal',headers={}}={}){
   const h={'content-type':'application/json',origin:base,...(auth==='portal'?{cookie:`vtx_portal=${cookie}`,'x-valtrex-csrf':csrf}:auth==='bot'?{authorization:`Bearer ${bridge}`,'x-valtrex-application':app}:auth==='manager'?{authorization:`Bot ${'token_'.repeat(10)}`} : {}),...headers};
   return handle(new Request(`${base}/${path}`,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(data||{})}));
  }
  async function call(path,options){
+  const method=options?.method||'GET',data=options?.data||{},portalPath=path.replace(/^portal/,'');
+  const sensitive=method!=='GET'&&(portalPath==='/platform/auth'||portalPath==='/platform/commands'&&['gateway_save','site_url'].includes(data.kind)||/^\/apps\/\d+\/config$/.test(portalPath)&&!!data.clientSecret);
+  if(sensitive&&(options?.auth||'portal')==='portal'){
+   const prepared=await rawCall('portal/security/challenge',{method:'POST',data:{action:'sensitive_change',scope:'self',digest:await payloadDigest({route:portalPath,method,data})}}),response=await prepared.json();
+   if(response.id){const row=tables.valtrex_operation_confirmations.find(r=>r.id===response.id);row.expires_at='2099-01-01';options={...options,headers:{...options?.headers,'x-valtrex-confirmation':response.id}};}
+  }
   const r=await rawCall(path,options);return {status:r.status,body:await r.json()};
  }
  return {tables,call,rawCall,calls,networkCalls,media,storageCalls,mediaState,setFetch:fn=>{externalFetch=fn;},setManager:id=>{managerId=id;}};

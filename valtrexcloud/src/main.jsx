@@ -83,7 +83,7 @@ function AccessPage({ token, kind = 'backup' }) {
   const [consent, setConsent] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/${kind === 'verify' ? 'v' : 'g'}/${encodeURIComponent(token)}`, { signal: controller.signal, credentials: 'omit' })
+    fetch(`/api/${kind === 'verify' ? 'v' : 'g'}/${encodeURIComponent(token)}`, { signal: AbortSignal.any([controller.signal,AbortSignal.timeout(12000)]), credentials: 'omit' })
       .then(async response => { const data = await response.json(); setState({ ...data, loading: false }); })
       .catch(() => { if (!controller.signal.aborted) setState({ status: 'temporary', loading: false }); });
     return () => controller.abort();
@@ -115,6 +115,8 @@ function AccessPage({ token, kind = 'backup' }) {
 }
 
 function LoadingPage({ text = 'Verificando sua conta…', theme = DEFAULT_THEME, linkValidated = false }) {
+  const [slow,setSlow]=useState(false);
+  useEffect(()=>{const timer=setTimeout(()=>setSlow(true),15000);return()=>clearTimeout(timer);},[]);
   const loadingTheme = { ...theme, backgroundImage: theme.loadingBackgroundImage || theme.backgroundImage };
   return <Shell theme={loadingTheme} loading><section className={`card status-card loading-card ${theme.loadingTransparent!==false?'loading-transparent':''}`} role="status" aria-live="polite">
     <div className="loading-orbit"><ShieldIcon/><i/><i/></div>
@@ -124,6 +126,7 @@ function LoadingPage({ text = 'Verificando sua conta…', theme = DEFAULT_THEME,
       <div className={linkValidated ? 'current' : ''}><span>02</span><div><strong>Autorização no Discord</strong><small>Você confirma o acesso no site oficial</small></div></div>
       <div><span>03</span><div><strong>Conclusão</strong><small>O resultado aparecerá depois da autorização</small></div></div></div>
     <div className="loading-track"><span/></div>
+    {slow&&<div className="inline-note">A conexão está demorando. Confira sua internet e a disponibilidade do Discord.<button className="subtle-button" type="button" onClick={()=>window.location.reload()}>Consultar novamente</button><a className="subtle-button" href="/dashboard">Abrir painel</a></div>}
     <p className="loading-privacy">Nunca pedimos senha ou token de conta.</p>
   </section></Shell>;
 }
@@ -140,7 +143,7 @@ function SetupPage({ token }) {
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/gift/${encodeURIComponent(token)}`, { credentials: 'same-origin', signal: controller.signal })
+    fetch(`/api/gift/${encodeURIComponent(token)}`, { credentials: 'same-origin', signal: AbortSignal.any([controller.signal,AbortSignal.timeout(12000)]) })
       .then(async response => { const data = await response.json(); setState(response.ok ? { ...data, loading: false } : { status: 'forbidden', loading: false });
         if (response.ok && data.pulls?.length) { const last = data.pulls.at(-1); setJob({ jobId: last.id, requested: last.requested_count, status: last.status });
           setGuildId(last.target_guild_id); setCount(String(Math.min(last.requested_count, data.memberLimit || 500))); } })
@@ -150,7 +153,7 @@ function SetupPage({ token }) {
   useEffect(() => {
     if (!job?.jobId) return;
     const poll = async () => {
-      try { const response = await fetch(`/api/gift/${encodeURIComponent(token)}/job/${job.jobId}`, { credentials: 'same-origin' });
+      try { const response = await fetch(`/api/gift/${encodeURIComponent(token)}/job/${job.jobId}`, { credentials: 'same-origin',signal:AbortSignal.timeout(8000) });
         if (response.ok) { const update = await response.json(); setJob(previous => ({ ...previous, ...update })); } } catch { /* tenta novamente */ }
     };
     poll(); const interval = setInterval(poll, 10000); return () => clearInterval(interval);
@@ -164,13 +167,13 @@ function SetupPage({ token }) {
     event.preventDefault(); setError(''); setSaving(true);
     try {
       const response = await fetch(`/api/gift/${encodeURIComponent(token)}/recovery`, { method: 'POST', credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ guildId, count: Number(count) }) });
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ guildId, count: Number(count) }),signal:AbortSignal.timeout(12000) });
       const data = await response.json();
       if (!response.ok) setError(data.error || 'Não foi possível iniciar.');
       else { setJob(data); setRepeatMode(false); setState(previous => ({ ...previous, remainingPulls: data.remainingPulls,
         nextPullAt: data.nextPullAt || previous.nextPullAt,
         pulls: [...(previous.pulls || []), { id: data.jobId, requested_count: data.requested, target_guild_id: guildId, status: 'pending' }] })); }
-    } catch { setError('Conexão indisponível. Tente novamente.'); }
+    } catch { setError('Não recebemos a confirmação. Atualize esta página para conferir o estado antes de iniciar outra recuperação.'); }
     finally { setSaving(false); }
   }
   return <Shell><section className="card setup-card">
@@ -215,7 +218,7 @@ function PreviewPage({ parts }) {
   const [state, setState] = useState({ loading: true });
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/preview/${parts.join('/')}`, { signal: controller.signal, credentials: 'omit' })
+    fetch(`/api/preview/${parts.join('/')}`, { signal: AbortSignal.any([controller.signal,AbortSignal.timeout(12000)]), credentials: 'omit' })
       .then(async response => setState({ ...await response.json(), loading: false }))
       .catch(() => { if (!controller.signal.aborted) setState({ status: 'temporary', loading: false }); });
     return () => controller.abort();

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fixture,app,user} from './helpers/edge.mjs';
-import {DEFAULT_PUBLIC_ORIGIN,publicSiteOrigin,publicSiteMetadata} from '../site-config.mjs';
+import {DEFAULT_PUBLIC_ORIGIN,LEGACY_PUBLIC_ORIGIN,publicSiteOrigin,publicSiteMetadata} from '../site-config.mjs';
 const custom='https://loja.example.com';
 const project=()=>fixture({base:custom,env:{VALTREX_CLOUD_PUBLIC_URL:custom}});
 const config=f=>f.call(`portal/apps/${app}/config`);
@@ -19,7 +19,7 @@ test('unsafe domain configuration falls back safely in frontend and backend',asy
  for(const input of ['http://loja.example.com','https://user:password@loja.example.com','https://loja.example.com/path','https://loja.example.com/?next=bad','https://loja.example.com/#bad','https://loja.example.com:8443','https://localhost','https://127.0.0.1','https://2130706433','https://[::1]','https://service.internal','https://loja.example.com\\@evil.com','https://loja.\nexample.com']){
   assert.equal(publicSiteOrigin(input),null,input);
   const f=await fixture({env:{VALTREX_CLOUD_PUBLIC_URL:input}}),r=await f.call('health',{auth:'none'});
-  assert.equal(r.status,200,input);assert.equal(r.body.redirectUri,DEFAULT_PUBLIC_ORIGIN+'/api/auth/discord/callback',input);
+  assert.equal(r.status,200,input);assert.equal(r.body.redirectUri,LEGACY_PUBLIC_ORIGIN+'/api/auth/discord/callback',input);
  }
  assert.equal(publicSiteOrigin('https://LOJA.example.com:443/'),custom);
 });
@@ -52,13 +52,13 @@ for(const issuer of [undefined,'https://trusted-ai.example.com'])test('hosted AI
  assert.equal((await f.call('manager/site/ai/access',{auth:'manager',method:'POST',data:{botId:app,ownerId:user,actorId:user,enabled:true,tickets:true,community:true}})).status,200);
  assert.equal((await f.call(`portal/apps/${app}/workspace`,{method:'PUT',data:{revision:defaults.revision,cloudAI:{...defaults.cloudAI,enabled:true,ticketsEnabled:true}}})).status,200);
  let claims;f.setFetch(async(_url,options)=>{const permit=new Headers(options.headers).get('x-cloud-permit');claims=JSON.parse(Buffer.from(permit.split('.')[1],'base64url').toString());return Response.json({text:'Olá!',model:'fixture'});});
- const result=await f.call(`portal/apps/${app}/workspace/cloud-ai/test`,{method:'POST',data:{message:'Oi!'}});assert.equal(result.status,200);assert.equal(claims.iss,issuer||DEFAULT_PUBLIC_ORIGIN);assert.equal(claims.aud,'cloud-support');assert.ok(claims.exp>claims.iat&&claims.exp-claims.iat<=60);
+ const result=await f.call(`portal/apps/${app}/workspace/cloud-ai/test`,{method:'POST',data:{message:'Oi!'}});assert.equal(result.status,200);assert.equal(claims.iss,issuer||LEGACY_PUBLIC_ORIGIN);assert.equal(claims.aud,'cloud-support');assert.ok(claims.exp>claims.iat&&claims.exp-claims.iat<=60);
 });
 
 test('domain diagnostics are restricted to administrators and privileged URL commands reject private targets',async()=>{
  const f=await project();assert.equal((await f.call('portal/platform/status')).status,403);
  f.tables.valtrex_manager_web=[{id:1,administrator_ids:[user],site_owner_ids:[user]}];
- const r=await f.call('portal/platform/status');assert.equal(r.status,200);assert.equal(r.body.site.publicUrl,custom);assert.equal(r.body.site.redirectUri,custom+'/api/auth/discord/callback');assert.equal(r.body.site.aiIssuer,DEFAULT_PUBLIC_ORIGIN);assert.ok(!JSON.stringify(r.body.site).includes('secret'));
+ const r=await f.call('portal/platform/status');assert.equal(r.status,200);assert.equal(r.body.site.publicUrl,custom);assert.equal(r.body.site.redirectUri,custom+'/api/auth/discord/callback');assert.equal(r.body.site.aiIssuer,LEGACY_PUBLIC_ORIGIN);assert.ok(!JSON.stringify(r.body.site).includes('secret'));
  const invalid=await f.call('portal/platform/commands',{method:'POST',data:{clientId:'00000089-0000-4000-8000-000000000001',kind:'site_url',payload:{url:'https://user:password@loja.example.com'}}});assert.equal(invalid.status,400);assert.equal(f.tables.valtrex_manager_commands.length,0);
 });
 

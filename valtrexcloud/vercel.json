@@ -72,5 +72,51 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/api/auth/discord/callback",
+      "has": [
+        {
+          "type": "host",
+          "value": "valtrexapplications\\.vercel\\.app"
+        }
+      ],
+      "destination": "https://synxapps.vercel.app/api/auth/discord/callback",
+      "permanent": false
+    },
+    {
+      "source": "/:path((?!api(?:/|$)).*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "valtrexapplications\\.vercel\\.app"
+        }
+      ],
+      "destination": "https://synxapps.vercel.app/:path",
+      "permanent": false
+    },
+    {
+      "source": "/api/auth/discord/callback",
+      "has": [
+        {
+          "type": "host",
+          "value": "systembux\\.vercel\\.app"
+        }
+      ],
+      "destination": "https://synxapps.vercel.app/api/auth/discord/callback",
+      "permanent": false
+    },
+    {
+      "source": "/:path((?!api(?:/|$)).*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "systembux\\.vercel\\.app"
+        }
+      ],
+      "destination": "https://synxapps.vercel.app/:path",
+      "permanent": false
+    }
   ]
 }

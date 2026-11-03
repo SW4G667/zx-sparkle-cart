@@ -8,7 +8,7 @@ import * as ImageScript96 from 'imagescript';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 export const app='1500042139491635200',other='2500042139491635200',user='12345678901234567',second='22345678901234567',manager='1506929376967790752';
 const bridge='bridge_0123456789012345678901234567890',cookie='c'.repeat(90),csrf='csrf-fixture';
-export async function fixture({env={},base='https://valtrexapplications.vercel.app'}={}){
+export async function fixture({env={},base='https://synxapps.vercel.app'}={}){
  let externalFetch=null;const networkCalls=[];
  let handle;let managerId=manager;
  const tables={valtrex_tenants:[{id:app,owner_user_id:user,bot_key_hash:hash(bridge)},{id:other,owner_user_id:second,bot_key_hash:hash('different')}],valtrex_portal_sessions:[],valtrex_product_catalogs:[],valtrex_product_commands:[],valtrex_site_notices:[],valtrex_notice_reads:[]};

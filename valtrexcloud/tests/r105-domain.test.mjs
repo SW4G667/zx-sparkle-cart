@@ -20,7 +20,7 @@ test('owned legacy browser routes migrate but API clients and AI keys never rece
   const callback=matching.find(r=>r.source==='/api/auth/discord/callback');assert.equal(callback.destination,DEFAULT_PUBLIC_ORIGIN+'/api/auth/discord/callback');assert.equal(callback.permanent,false);
   const pages=matching.find(r=>r.source.startsWith('/:path(')),pattern=new RegExp('^/'+pages.source.slice(7,-1)+'$');
   for(const path of ['/','/dashboard','/plans','/g/token'])assert.equal(pattern.test(path),true,path);
-  for(const path of ['/api/health','/api/cloud-ai/jwks','/api/manager/site/ai/test','/api/portal/me'])assert.equal(pattern.test(path),false,path);
+  for(const path of ['/api/health','/api/public/cloud-ai/key','/api/manager/site/ai/test','/api/portal/me'])assert.equal(pattern.test(path),false,path);
  }
 });
 test('metadata uses the new public hostname even when a build has a legacy URL configured',()=>{

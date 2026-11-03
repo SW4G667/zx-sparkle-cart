@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {fixture,app,user} from './helpers/edge.mjs';
+import {fixture,app,user,manager} from './helpers/edge.mjs';
 const root=`portal/apps/${app}/assistant`;
 async function setup(){const f=await fixture();f.tables.valtrex_site_user_access=[{user_id:user,ai_managed:true,ai_enabled:true,ai_tickets:true,ai_community:true}];const chat=(await f.call(root,{method:'POST',data:{id:randomUUID()}})).body.chat;return {f,chat};}
 const send=(f,chat,text='Olá, pode me ajudar com minha loja?')=>f.call(`${root}/chats/${chat.id}/messages`,{method:'POST',data:{revision:chat.revision,clientId:randomUUID(),text,images:[]}});
@@ -24,6 +24,17 @@ test('a negated request for English still requires Portuguese',async()=>{
 });
 test('an English answer wrapped in quotation marks is still corrected',async()=>{
  const {f,chat}=await setup();let calls=0;f.setFetch(async()=>Response.json({text:JSON.stringify({text:++calls===1?'"Hello! How can I help you?"':'Olá! Como posso ajudar?',action:null})}));const r=await send(f,chat);assert.equal(calls,2);assert.match(r.body.chat.messages.at(-1).content,/Olá/);
+});
+test('English fragments mixed into Portuguese are corrected while code, links and quoted product names stay intact',async()=>{
+ const {f,chat}=await setup();let calls=0;
+ const mixed='Posso criar novos produtos, editar descrições e preços ou ajustar temas para destacar suas ofertas. É só me dizer o que você precisa mudar ou add to the catalog!';
+ f.setFetch(async()=>Response.json({text:++calls===1?mixed:calls===2?'Posso organizar os produtos e adicionar itens ao catálogo.':'O produto "The Lord of the Rings" usa `add to the catalog` em https://example.com/add-to-the-catalog.'}));
+ const fixed=await send(f,chat);assert.equal(calls,2);assert.match(fixed.body.chat.messages.at(-1).content,/adicionar itens ao catálogo/);
+ const technical=await send(f,fixed.body.chat,'Como funciona esse produto?');assert.equal(calls,3);assert.match(technical.body.chat.messages.at(-1).content,/The Lord of the Rings/);assert.match(technical.body.chat.messages.at(-1).content,/https:\/\/example.com/);
+});
+test('the Manager diagnostic applies the same correction and preserves structured output without executing an action',async()=>{
+ const f=await fixture();let calls=0;f.setFetch(async(url)=>String(url)==='https://discord.com/api/v10/users/@me'?Response.json({id:manager,bot:true}):Response.json({text:++calls===1?JSON.stringify({text:'Posso ajudar com produtos ou add to the catalog!',action:{kind:'product',data:{name:'Cloud Pass'}}}):'Posso ajudar com produtos ou adicionar itens ao catálogo.',model:'modelo-27b'}));
+ const r=await f.call('manager/site/ai/test',{method:'POST',auth:'manager',data:{message:'Como você pode me ajudar?'}});assert.equal(r.status,200);assert.equal(calls,2);const parsed=JSON.parse(r.body.text);assert.match(parsed.text,/adicionar itens ao catálogo/);assert.equal(parsed.action.data.name,'Cloud Pass');assert.equal(r.body.model,'modelo-27b');assert.equal(f.tables.valtrex_product_commands.length,0);
 });
 test('explicit translation requests may contain English and Portuguese technical replies need no second call',async()=>{
  const {f,chat}=await setup();let calls=0;f.setFetch(async()=>Response.json({text:JSON.stringify({text:++calls===1?'Hello! How can I help you?':'O produto Cloud Pass usa o campo `productId`.',action:null})}));

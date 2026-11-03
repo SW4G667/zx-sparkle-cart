@@ -1399,6 +1399,7 @@ function englishReply105(text:string){
  const plain=unquoted.trim().length>=8?unquoted:prose;
  const en=new Set(['the','you','your','are','is','can','will','with','this','that','please','hello','help','what','how','would','let','here','my','name','i','we','thanks','thank','need','should','am','could','add','to','from','for','and']);
  const pt=new Set(['você','voce','não','nao','para','com','seu','sua','posso','como','estou','eu','uma','um','que','sim','olá','ola','precisa','vamos','meu','nome','é','se','são','sao']);
+ let run=0;for(const word of plain.match(/[a-zà-ÿ]+/g)||[]){run=en.has(word)?run+1:0;if(run>=3)return true;}
  const isEnglish=(part:string)=>{if(/^\s*(?:hello|hi|hey|thanks|thank you)[!.\s]*$/.test(part))return true;const words=part.match(/[a-zà-ÿ]+/g)||[],english=words.filter(w=>en.has(w)).length,portuguese=words.filter(w=>pt.has(w)).length;return english>=3&&english>portuguese*2;};
  return isEnglish(plain)||plain.split(/[.!?;:\n]|\b(?:e|ou|mas|porém)\b/).some(isEnglish);
 }

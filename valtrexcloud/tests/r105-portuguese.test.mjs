@@ -26,11 +26,12 @@ test('an English answer wrapped in quotation marks is still corrected',async()=>
  const {f,chat}=await setup();let calls=0;f.setFetch(async()=>Response.json({text:JSON.stringify({text:++calls===1?'"Hello! How can I help you?"':'Olá! Como posso ajudar?',action:null})}));const r=await send(f,chat);assert.equal(calls,2);assert.match(r.body.chat.messages.at(-1).content,/Olá/);
 });
 test('English fragments mixed into Portuguese are corrected while code, links and quoted product names stay intact',async()=>{
+ for(const mixed of ['Posso criar novos produtos, editar descrições e preços ou ajustar temas para destacar suas ofertas. É só me dizer o que você precisa mudar ou add to the catalog!','Posso criar novos produtos, editar descrições e preços ou ajustar themes para destacar suas offers. É só me dizer o que você precisa mudar or add to the catalog!']){
  const {f,chat}=await setup();let calls=0;
- const mixed='Posso criar novos produtos, editar descrições e preços ou ajustar temas para destacar suas ofertas. É só me dizer o que você precisa mudar ou add to the catalog!';
  f.setFetch(async()=>Response.json({text:++calls===1?mixed:calls===2?'Posso organizar os produtos e adicionar itens ao catálogo.':'O produto "The Lord of the Rings" usa `add to the catalog` em https://example.com/add-to-the-catalog.'}));
  const fixed=await send(f,chat);assert.equal(calls,2);assert.match(fixed.body.chat.messages.at(-1).content,/adicionar itens ao catálogo/);
  const technical=await send(f,fixed.body.chat,'Como funciona esse produto?');assert.equal(calls,3);assert.match(technical.body.chat.messages.at(-1).content,/The Lord of the Rings/);assert.match(technical.body.chat.messages.at(-1).content,/https:\/\/example.com/);
+ }
 });
 test('the Manager diagnostic applies the same correction and preserves structured output without executing an action',async()=>{
  const f=await fixture();let calls=0;f.setFetch(async(url)=>String(url)==='https://discord.com/api/v10/users/@me'?Response.json({id:manager,bot:true}):Response.json({text:++calls===1?JSON.stringify({text:'Posso ajudar com produtos ou add to the catalog!',action:{kind:'product',data:{name:'Cloud Pass'}}}):'Posso ajudar com produtos ou adicionar itens ao catálogo.',model:'modelo-27b'}));
